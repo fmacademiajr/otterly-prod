@@ -1,6 +1,5 @@
 import { useCallback, useState } from "react";
 import {
-  ActivityIndicator,
   FlatList,
   KeyboardAvoidingView,
   Platform,
@@ -14,7 +13,6 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter } from "expo-router";
 import { Plus, Trash2, Sparkles } from "lucide-react-native";
 
-import { OtterButton, SoftExit } from "@/src/components/OtterButton";
 import { api, ApiError, type Task } from "@/src/lib/api";
 import { useTheme } from "@/src/theme/ThemeProvider";
 import { fonts, radii, spacing } from "@/src/theme/tokens";
@@ -37,11 +35,7 @@ export default function InboxScreen() {
     }
   }, []);
 
-  useFocusEffect(
-    useCallback(() => {
-      load();
-    }, [load])
-  );
+  useFocusEffect(useCallback(() => { load(); }, [load]));
 
   const addOne = async () => {
     const clean = text.trim();
@@ -69,11 +63,7 @@ export default function InboxScreen() {
       setText("");
       load();
     } catch (e: any) {
-      if (e instanceof ApiError && e.status === 429) {
-        setError(e.detail);
-      } else {
-        setError("Braindump failed. Try again.");
-      }
+      setError(e instanceof ApiError && e.status === 429 ? e.detail : "Braindump failed. Try again.");
     } finally {
       setDumping(false);
     }
@@ -89,32 +79,31 @@ export default function InboxScreen() {
   };
 
   return (
-    <SafeAreaView
-      style={[styles.safe, { backgroundColor: colors.background }]}
-      edges={["top"]}
-    >
+    <SafeAreaView style={[styles.safe, { backgroundColor: colors.warmBg }]} edges={["top"]}>
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
-        <View style={styles.header}>
-          <Text style={[styles.eyebrow, { color: colors.textSubtle, fontFamily: fonts.body }]}>
-            inbox
-          </Text>
+        {/* Centered Fraunces title */}
+        <View style={styles.headerRow}>
           <Text style={[styles.title, { color: colors.text, fontFamily: fonts.displayBold }]}>
-            Anything you're avoiding.
+            Inbox
           </Text>
         </View>
 
-        <View style={[styles.modeRow, { borderColor: colors.border }]}>
+        {/* Segmented pill: Quick add | Braindump */}
+        <View style={[styles.segmented, { backgroundColor: colors.warmSurface, borderColor: colors.warmBorder }]}>
           <TouchableOpacity
             testID="mode-quick"
-            style={[styles.modeBtn, mode === "quick" && { backgroundColor: colors.primarySurface }]}
+            style={[
+              styles.segBtn,
+              mode === "quick" && { backgroundColor: colors.primary },
+            ]}
             onPress={() => setMode("quick")}
           >
             <Text style={{
-              color: mode === "quick" ? colors.primary : colors.textMuted,
-              fontFamily: mode === "quick" ? fonts.bodySemibold : fonts.body,
+              color: mode === "quick" ? colors.onPrimary : colors.textMuted,
+              fontFamily: fonts.bodySemibold,
               fontSize: 14,
             }}>
               Quick add
@@ -122,12 +111,15 @@ export default function InboxScreen() {
           </TouchableOpacity>
           <TouchableOpacity
             testID="mode-braindump"
-            style={[styles.modeBtn, mode === "dump" && { backgroundColor: colors.primarySurface }]}
+            style={[
+              styles.segBtn,
+              mode === "dump" && { backgroundColor: colors.primary },
+            ]}
             onPress={() => setMode("dump")}
           >
             <Text style={{
-              color: mode === "dump" ? colors.primary : colors.textMuted,
-              fontFamily: mode === "dump" ? fonts.bodySemibold : fonts.body,
+              color: mode === "dump" ? colors.onPrimary : colors.textMuted,
+              fontFamily: fonts.bodySemibold,
               fontSize: 14,
             }}>
               Braindump
@@ -135,81 +127,87 @@ export default function InboxScreen() {
           </TouchableOpacity>
         </View>
 
-        <View style={styles.inputWrap}>
-          <TextInput
-            testID={mode === "quick" ? "quick-add-input" : "braindump-input"}
-            value={text}
-            onChangeText={setText}
-            placeholder={
-              mode === "quick"
-                ? "One thing…"
-                : "Pour it all out. We'll sort it."
-            }
-            placeholderTextColor={colors.textSubtle}
-            multiline={mode === "dump"}
-            style={[
-              styles.input,
-              mode === "dump" && { minHeight: 140, textAlignVertical: "top" },
-              {
-                color: colors.text,
-                backgroundColor: colors.surface,
-                borderColor: colors.border,
-                fontFamily: fonts.body,
-              },
-            ]}
-          />
-          {mode === "quick" ? (
+        {/* Input */}
+        {mode === "quick" ? (
+          <View style={styles.inputRow}>
+            <TextInput
+              testID="quick-add-input"
+              value={text}
+              onChangeText={setText}
+              placeholder="One thing…"
+              placeholderTextColor={colors.textSubtle}
+              style={[styles.quickInput, { color: colors.text, backgroundColor: colors.background, borderColor: colors.warmBorder, fontFamily: fonts.body }]}
+            />
             <TouchableOpacity
               testID="quick-add-btn"
               onPress={addOne}
               disabled={!text.trim()}
               style={[
                 styles.addBtn,
-                { backgroundColor: text.trim() ? colors.primary : colors.surfaceMuted },
+                { backgroundColor: text.trim() ? colors.primary : colors.warmBorder },
               ]}
             >
-              <Plus color={text.trim() ? colors.onPrimary : colors.textSubtle} size={20} />
+              <Plus color={text.trim() ? colors.onPrimary : colors.textSubtle} size={22} />
             </TouchableOpacity>
-          ) : null}
-        </View>
-
-        {mode === "dump" ? (
-          <View style={{ paddingHorizontal: spacing.lg, marginTop: spacing.md }}>
-            <OtterButton
-              label={dumping ? "sorting…" : "Sort it out"}
+          </View>
+        ) : (
+          <View style={{ paddingHorizontal: spacing.lg }}>
+            <TextInput
+              testID="braindump-input"
+              value={text}
+              onChangeText={setText}
+              placeholder="Just let it all out…"
+              placeholderTextColor={colors.textSubtle}
+              multiline
+              style={[styles.dumpInput, { color: colors.text, backgroundColor: colors.background, borderColor: colors.warmBorder, fontFamily: fonts.body }]}
+            />
+            <TouchableOpacity
               testID="braindump-btn"
               onPress={braindump}
-              loading={dumping}
               disabled={!text.trim() || dumping}
-            />
+              style={[
+                styles.sortBtn,
+                { backgroundColor: text.trim() ? colors.primary : colors.warmBorder },
+              ]}
+            >
+              <Text style={{
+                color: text.trim() ? colors.onPrimary : colors.textSubtle,
+                fontFamily: fonts.bodySemibold,
+                fontSize: 16,
+              }}>
+                {dumping ? "sorting…" : "Sort it out"}
+              </Text>
+            </TouchableOpacity>
           </View>
-        ) : null}
+        )}
 
         {error ? (
-          <Text style={[styles.error, { color: colors.danger, fontFamily: fonts.body }]}>
-            {error}
-          </Text>
+          <Text style={[styles.error, { color: colors.danger, fontFamily: fonts.body }]}>{error}</Text>
         ) : null}
 
+        {/* Task list section */}
+        <Text style={[styles.section, { color: colors.text, fontFamily: fonts.display }]}>
+          Today's Focus
+        </Text>
+        <View style={[styles.divider, { backgroundColor: colors.warmBorder }]} />
+
         <FlatList
-          contentContainerStyle={styles.listContent}
+          contentContainerStyle={styles.list}
           data={tasks}
           keyExtractor={(t) => t.id}
           renderItem={({ item }) => (
             <TouchableOpacity
               testID={`inbox-task-${item.id}`}
               onPress={() => open(item)}
-              activeOpacity={0.7}
-              style={[
-                styles.taskItem,
-                { backgroundColor: colors.surface, borderColor: colors.border },
-              ]}
+              activeOpacity={0.6}
+              style={styles.taskItem}
             >
+              <View style={[styles.itemCheckbox, { borderColor: colors.textSubtle }]} />
               <View style={{ flex: 1 }}>
                 <Text
                   style={{
                     color: colors.text,
-                    fontFamily: fonts.body,
+                    fontFamily: fonts.bodySemibold,
                     fontSize: 16,
                     lineHeight: 22,
                   }}
@@ -217,22 +215,22 @@ export default function InboxScreen() {
                 >
                   {item.title}
                 </Text>
-                <Text style={[styles.itemMeta, { color: colors.textSubtle, fontFamily: fonts.body }]}>
-                  {item.shrunk ? "shrunk · tap to open" : "not shrunk yet · tap to shrink"}
-                </Text>
               </View>
               {item.shrunk ? (
-                <Sparkles size={16} color={colors.primary} strokeWidth={1.5} />
+                <Sparkles size={14} color={colors.primary} strokeWidth={1.5} />
               ) : null}
               <TouchableOpacity
                 testID={`del-${item.id}`}
                 onPress={() => del(item.id)}
                 hitSlop={12}
-                style={{ marginLeft: spacing.md }}
+                style={{ marginLeft: spacing.sm, padding: 4 }}
               >
-                <Trash2 size={18} color={colors.textSubtle} strokeWidth={1.4} />
+                <Trash2 size={16} color={colors.textSubtle} strokeWidth={1.4} />
               </TouchableOpacity>
             </TouchableOpacity>
+          )}
+          ItemSeparatorComponent={() => (
+            <View style={[styles.itemDivider, { backgroundColor: colors.warmBorder }]} />
           )}
           ListEmptyComponent={
             <View style={styles.empty}>
@@ -249,30 +247,29 @@ export default function InboxScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1 },
-  header: { paddingHorizontal: spacing.lg, paddingTop: spacing.lg, paddingBottom: spacing.md },
-  eyebrow: { fontSize: 12, letterSpacing: 4, textTransform: "uppercase", marginBottom: spacing.xs },
-  title: { fontSize: 26, lineHeight: 34 },
-  modeRow: {
+  headerRow: { alignItems: "center", paddingTop: spacing.lg, paddingBottom: spacing.md },
+  title: { fontSize: 28, lineHeight: 36 },
+  segmented: {
     flexDirection: "row",
     marginHorizontal: spacing.lg,
     borderRadius: radii.pill,
-    borderWidth: 1,
     padding: 4,
-    marginBottom: spacing.md,
-    alignSelf: "flex-start",
+    borderWidth: 1,
+    marginBottom: spacing.base,
   },
-  modeBtn: {
-    paddingHorizontal: spacing.base,
-    paddingVertical: spacing.sm,
+  segBtn: {
+    flex: 1,
+    paddingVertical: spacing.md,
+    alignItems: "center",
     borderRadius: radii.pill,
   },
-  inputWrap: {
+  inputRow: {
     flexDirection: "row",
     paddingHorizontal: spacing.lg,
     gap: spacing.sm,
-    alignItems: "flex-start",
+    marginBottom: spacing.md,
   },
-  input: {
+  quickInput: {
     flex: 1,
     borderRadius: radii.lg,
     borderWidth: 1,
@@ -281,6 +278,15 @@ const styles = StyleSheet.create({
     fontSize: 16,
     minHeight: 52,
   },
+  dumpInput: {
+    borderRadius: radii.lg,
+    borderWidth: 1,
+    padding: spacing.base,
+    fontSize: 16,
+    minHeight: 140,
+    textAlignVertical: "top",
+    marginBottom: spacing.base,
+  },
   addBtn: {
     width: 52,
     height: 52,
@@ -288,18 +294,34 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  error: { fontSize: 13, paddingHorizontal: spacing.lg, marginTop: spacing.sm },
-  listContent: { padding: spacing.lg, gap: spacing.sm, paddingBottom: spacing.xxl },
+  sortBtn: {
+    height: 56,
+    borderRadius: radii.pill,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  error: { fontSize: 13, paddingHorizontal: spacing.lg, marginBottom: spacing.sm },
+  section: {
+    fontSize: 22,
+    paddingHorizontal: spacing.lg,
+    marginTop: spacing.lg,
+    marginBottom: spacing.md,
+  },
+  divider: { height: 1, marginHorizontal: spacing.lg },
+  list: { paddingHorizontal: spacing.lg, paddingBottom: spacing.xxl },
   taskItem: {
     flexDirection: "row",
     alignItems: "center",
-    borderWidth: 1,
-    borderRadius: radii.lg,
-    padding: spacing.base,
-    marginBottom: spacing.sm,
-    gap: spacing.sm,
+    paddingVertical: spacing.base,
+    gap: spacing.md,
   },
-  itemMeta: { fontSize: 12, marginTop: 4 },
+  itemCheckbox: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 1.5,
+  },
+  itemDivider: { height: 1, marginHorizontal: 0 },
   empty: { alignItems: "center", paddingVertical: spacing.xxl },
   emptyText: { fontSize: 15 },
 });

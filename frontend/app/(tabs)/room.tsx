@@ -11,10 +11,10 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useRouter } from "expo-router";
 import { Send, LifeBuoy } from "lucide-react-native";
+import { useRouter } from "expo-router";
+import Svg, { Path } from "react-native-svg";
 
-import { WaterWave } from "@/src/components/motifs";
 import { api, type RoomMessage } from "@/src/lib/api";
 import { useTheme } from "@/src/theme/ThemeProvider";
 import { fonts, radii, spacing } from "@/src/theme/tokens";
@@ -24,6 +24,22 @@ const SESSION_KEY = "otterly.roomSession";
 
 function newSessionId() {
   return `room-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function WaveDivider() {
+  const { colors } = useTheme();
+  return (
+    <View style={{ height: 32, width: "100%" }}>
+      <Svg width="100%" height="32" viewBox="0 0 400 32" preserveAspectRatio="none">
+        <Path
+          d="M0 16 Q 100 -2, 200 16 T 400 16"
+          stroke={colors.tealBandBorder}
+          strokeWidth={1.2}
+          fill="none"
+        />
+      </Svg>
+    </View>
+  );
 }
 
 export default function RoomScreen() {
@@ -57,14 +73,13 @@ export default function RoomScreen() {
     setSending(true);
     try {
       const res = await api.roomSend(sessionId, "(user just opened the room)");
-      const otterMsg: RoomMessage = {
+      setMessages([{
         id: `local-${Date.now()}`,
         session_id: sessionId,
         role: "otter",
         text: res.reply,
         created_at: new Date().toISOString(),
-      };
-      setMessages([otterMsg]);
+      }]);
       setGreeted(true);
     } catch {}
     setSending(false);
@@ -89,37 +104,25 @@ export default function RoomScreen() {
     setSending(true);
     try {
       const res = await api.roomSend(sessionId, clean);
-      const otterMsg: RoomMessage = {
+      setMessages((m) => [...m, {
         id: `local-${Date.now()}-o`,
         session_id: sessionId,
         role: "otter",
         text: res.reply,
         created_at: new Date().toISOString(),
-      };
-      setMessages((m) => [...m, otterMsg]);
+      }]);
     } catch {
-      setMessages((m) => [
-        ...m,
-        {
-          id: `local-${Date.now()}-e`,
-          session_id: sessionId,
-          role: "otter",
-          text: "(quiet · I'm here.)",
-          created_at: new Date().toISOString(),
-        },
-      ]);
+      setMessages((m) => [...m, {
+        id: `local-${Date.now()}-e`,
+        session_id: sessionId,
+        role: "otter",
+        text: "(quiet · I'm here.)",
+        created_at: new Date().toISOString(),
+      }]);
     } finally {
       setSending(false);
       setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100);
     }
-  };
-
-  const newSession = async () => {
-    const sid = newSessionId();
-    await storage.setItem(SESSION_KEY, sid);
-    setSessionId(sid);
-    setMessages([]);
-    setGreeted(false);
   };
 
   return (
@@ -129,40 +132,28 @@ export default function RoomScreen() {
         behavior={Platform.OS === "ios" ? "padding" : undefined}
         keyboardVerticalOffset={64}
       >
-        <View style={styles.header}>
-          <View>
-            <Text style={[styles.eyebrow, { color: colors.textSubtle, fontFamily: fonts.body }]}>
-              sit-with-me
-            </Text>
-            <Text style={[styles.title, { color: colors.text, fontFamily: fonts.displayBold }]}>
-              I'm here.
-            </Text>
-          </View>
+        {/* Teal-tinted hero band */}
+        <View style={[styles.band, { backgroundColor: colors.tealBand }]}>
           <TouchableOpacity
-            testID="new-session"
-            onPress={newSession}
-            style={styles.newBtn}
+            testID="crisis-link"
+            onPress={() => router.push("/crisis")}
+            style={[styles.crisisPill, { backgroundColor: colors.background, borderColor: colors.border }]}
           >
-            <Text style={{ color: colors.textMuted, fontFamily: fonts.body, fontSize: 13 }}>
-              new
+            <LifeBuoy size={14} color={colors.danger} strokeWidth={2} />
+            <Text style={{ color: colors.text, fontFamily: fonts.body, fontSize: 13, marginLeft: 6 }}>
+              If you're in crisis
             </Text>
           </TouchableOpacity>
-        </View>
 
-        <TouchableOpacity
-          testID="crisis-link"
-          onPress={() => router.push("/crisis")}
-          style={[styles.crisisLink, { borderColor: colors.border }]}
-        >
-          <LifeBuoy size={13} color={colors.textSubtle} strokeWidth={1.6} />
-          <Text style={{ color: colors.textSubtle, fontFamily: fonts.body, fontSize: 12, marginLeft: 6 }}>
-            If you're in crisis
+          <Text
+            testID="room-title"
+            style={[styles.title, { color: colors.text, fontFamily: fonts.displayBold }]}
+          >
+            I'm here.
           </Text>
-        </TouchableOpacity>
-
-        <View style={styles.waveWrap}>
-          <WaterWave width={220} color={colors.border} />
         </View>
+
+        <WaveDivider />
 
         <FlatList
           ref={listRef}
@@ -182,10 +173,10 @@ export default function RoomScreen() {
             >
               <Text
                 style={{
-                  color: item.role === "user" ? colors.primary : colors.text,
-                  fontFamily: item.role === "user" ? fonts.body : fonts.display,
-                  fontSize: item.role === "user" ? 15 : 17,
-                  lineHeight: 24,
+                  color: item.role === "user" ? colors.text : colors.text,
+                  fontFamily: fonts.display,
+                  fontSize: 17,
+                  lineHeight: 26,
                 }}
               >
                 {item.text}
@@ -208,22 +199,16 @@ export default function RoomScreen() {
             onChangeText={setText}
             placeholder="say anything — or nothing"
             placeholderTextColor={colors.textSubtle}
-            style={[
-              styles.input,
-              { color: colors.text, backgroundColor: colors.surface, borderColor: colors.border, fontFamily: fonts.body },
-            ]}
+            style={[styles.input, { color: colors.text, fontFamily: fonts.body }]}
             multiline
           />
           <TouchableOpacity
             testID="room-send"
             onPress={send}
             disabled={!text.trim() || sending}
-            style={[
-              styles.sendBtn,
-              { backgroundColor: text.trim() ? colors.primary : colors.surfaceMuted },
-            ]}
+            style={styles.sendBtn}
           >
-            <Send color={text.trim() ? colors.onPrimary : colors.textSubtle} size={18} />
+            <Send color={text.trim() ? colors.primary : colors.textSubtle} size={22} strokeWidth={1.6} />
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
@@ -233,58 +218,48 @@ export default function RoomScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1 },
-  header: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-end",
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.lg,
+  band: {
+    paddingTop: spacing.md,
+    paddingBottom: spacing.xl,
+    alignItems: "center",
   },
-  eyebrow: { fontSize: 12, letterSpacing: 4, textTransform: "uppercase", marginBottom: spacing.xs },
-  title: { fontSize: 30, lineHeight: 38 },
-  newBtn: { padding: spacing.sm },
-  waveWrap: { paddingHorizontal: spacing.lg, marginVertical: spacing.md },
+  crisisPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderWidth: 1,
+    borderRadius: radii.pill,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 6,
+    marginBottom: spacing.lg,
+  },
+  title: { fontSize: 44, lineHeight: 54 },
   list: { padding: spacing.lg, gap: spacing.md, paddingBottom: spacing.xxl },
   bubble: {
     maxWidth: "82%",
-    borderRadius: radii.lg,
+    borderRadius: radii.xl,
     paddingHorizontal: spacing.base,
     paddingVertical: spacing.md,
     marginBottom: spacing.sm,
   },
   inputBar: {
     flexDirection: "row",
-    gap: spacing.sm,
     padding: spacing.md,
     borderTopWidth: 1,
     alignItems: "flex-end",
+    gap: spacing.sm,
   },
   input: {
     flex: 1,
-    borderRadius: radii.lg,
-    borderWidth: 1,
-    paddingHorizontal: spacing.base,
+    paddingHorizontal: spacing.sm,
     paddingVertical: spacing.md,
     fontSize: 16,
     maxHeight: 120,
-    minHeight: 48,
+    minHeight: 44,
   },
   sendBtn: {
-    width: 48,
-    height: 48,
-    borderRadius: radii.lg,
+    width: 44,
+    height: 44,
     alignItems: "center",
     justifyContent: "center",
-  },
-  crisisLink: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: spacing.md,
-    paddingVertical: 6,
-    borderRadius: radii.pill,
-    borderWidth: 1,
-    alignSelf: "flex-start",
-    marginHorizontal: spacing.lg,
-    marginTop: spacing.md,
   },
 });

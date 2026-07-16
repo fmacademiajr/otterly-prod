@@ -2,7 +2,8 @@ import { StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { OtterButton, SoftExit } from "@/src/components/OtterButton";
-import { OtterGlyph, WaterWave } from "@/src/components/motifs";
+import { OtterMascot } from "@/src/components/OtterMascot";
+import { WaterWave } from "@/src/components/motifs";
 import { useTheme } from "@/src/theme/ThemeProvider";
 import { fonts, spacing } from "@/src/theme/tokens";
 
@@ -14,7 +15,7 @@ export default function Welcome() {
     <SafeAreaView style={[styles.safe, { backgroundColor: colors.background }]}>
       <View style={styles.container}>
         <View style={styles.top}>
-          <OtterGlyph size={160} color={colors.primary} />
+          <OtterMascot size={160} variant="default" />
           <View style={{ height: spacing.md }} />
           <WaterWave width={220} color={colors.border} />
         </View>

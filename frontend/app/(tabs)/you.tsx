@@ -11,7 +11,9 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter } from "expo-router";
 import { LogOut, Sparkles, ChevronRight } from "lucide-react-native";
-import { StreakRipple } from "@/src/components/motifs";
+
+import { ScreenHeader } from "@/src/components/ScreenHeader";
+import { StreakStrip } from "@/src/components/StreakStrip";
 import { api, type StreakStats, type AccessSnapshot } from "@/src/lib/api";
 import { useTheme } from "@/src/theme/ThemeProvider";
 import { fonts, radii, spacing } from "@/src/theme/tokens";
@@ -41,11 +43,7 @@ export default function YouScreen() {
     setLoadedFromStorage(true);
   }, []);
 
-  useFocusEffect(
-    useCallback(() => {
-      load();
-    }, [load])
-  );
+  useFocusEffect(useCallback(() => { load(); }, [load]));
 
   useEffect(() => {
     if (loadedFromStorage) storage.setItem("otterly.userName", name);
@@ -56,41 +54,18 @@ export default function YouScreen() {
 
   const days = stats?.days_this_week ?? 0;
   const streakLine =
-    days === 0
-      ? "This week is still fresh."
-      : days === 1
-      ? "You showed up 1 of 7 days."
-      : `You showed up ${days} of 7 days.`;
+    days === 0 ? "This week is still fresh."
+    : days === 1 ? "You showed up 1 of 7 days."
+    : `You showed up ${days} of 7 days.`;
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: colors.background }]} edges={["top"]}>
-      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-        <Text style={[styles.eyebrow, { color: colors.textSubtle, fontFamily: fonts.body }]}>
-          you
-        </Text>
-        <Text style={[styles.title, { color: colors.text, fontFamily: fonts.displayBold }]}>
-          {name ? name : "Hello, you."}
-        </Text>
+      <ScrollView contentContainerStyle={{ paddingBottom: spacing.xxl }} showsVerticalScrollIndicator={false}>
+        <ScreenHeader eyebrow="you" title="Your Progress Profile." />
 
-        <View
-          style={[
-            styles.streakCard,
-            { backgroundColor: colors.surface, borderColor: colors.border },
-          ]}
-          testID="streak-card"
-        >
-          <View style={styles.rippleWrap}>
-            <StreakRipple size={120} color={colors.primary} />
-            <View style={styles.rippleCenter}>
-              <Text style={[styles.dayNumber, { color: colors.text, fontFamily: fonts.numeric }]}>
-                {days}
-              </Text>
-              <Text style={[styles.dayLabel, { color: colors.textSubtle, fontFamily: fonts.body }]}>
-                of 7
-              </Text>
-            </View>
-          </View>
-          <Text style={[styles.streakLine, { color: colors.textMuted, fontFamily: fonts.body }]}>
+        <View style={[styles.streakWrap, { backgroundColor: colors.background }]} testID="streak-strip">
+          <StreakStrip daysActive={days} size={44} />
+          <Text style={[styles.streakLine, { color: colors.text, fontFamily: fonts.display }]}>
             {streakLine}
           </Text>
           <Text style={[styles.streakSub, { color: colors.textSubtle, fontFamily: fonts.body }]}>
@@ -98,123 +73,137 @@ export default function YouScreen() {
           </Text>
         </View>
 
-        <Text style={[styles.section, { color: colors.textSubtle, fontFamily: fonts.body }]}>
-          account
-        </Text>
-
-        {status === "authed" && user ? (
-          <View style={[styles.accountCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-            <Text style={{ color: colors.text, fontFamily: fonts.bodySemibold, fontSize: 15 }}>
-              {user.name}
-            </Text>
-            <Text style={{ color: colors.textMuted, fontFamily: fonts.body, fontSize: 13, marginTop: 2 }}>
-              {user.email}
-            </Text>
-            <View style={{ height: spacing.sm }} />
-            <TouchableOpacity testID="signout" onPress={signOut} style={{ flexDirection: "row", alignItems: "center" }}>
-              <LogOut size={14} color={colors.textSubtle} strokeWidth={1.5} />
-              <Text style={{ color: colors.textSubtle, fontFamily: fonts.body, fontSize: 13, marginLeft: 6 }}>
-                Sign out
+        <View style={styles.content}>
+          {status === "authed" && user ? (
+            <View
+              style={[styles.accountCard, { backgroundColor: colors.surface, borderColor: colors.border }]}
+              testID="account-card-authed"
+            >
+              <Text style={{ color: colors.text, fontFamily: fonts.bodySemibold, fontSize: 16 }}>
+                {user.name}
               </Text>
+              <Text style={{ color: colors.textMuted, fontFamily: fonts.body, fontSize: 13, marginTop: 2 }}>
+                {user.email}
+              </Text>
+              <TouchableOpacity
+                testID="signout"
+                onPress={signOut}
+                style={{ flexDirection: "row", alignItems: "center", marginTop: spacing.md }}
+              >
+                <LogOut size={14} color={colors.textSubtle} strokeWidth={1.5} />
+                <Text style={{ color: colors.textSubtle, fontFamily: fonts.body, fontSize: 13, marginLeft: 6 }}>
+                  Sign out
+                </Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <TouchableOpacity
+              testID="signin"
+              onPress={signIn}
+              activeOpacity={0.7}
+              style={[styles.accountCard, { backgroundColor: colors.surface, borderColor: colors.border, flexDirection: "row", alignItems: "center", gap: spacing.md }]}
+            >
+              <View style={[styles.googleBadge, { borderColor: colors.border }]}>
+                <Text style={{ fontFamily: fonts.bodySemibold, fontSize: 18 }}>G</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: colors.text, fontFamily: fonts.bodySemibold, fontSize: 16 }}>
+                  Sign in with Google
+                </Text>
+                <Text style={{ color: colors.textMuted, fontFamily: fonts.body, fontSize: 13, marginTop: 2, lineHeight: 18 }}>
+                  Sync across devices. Required to purchase.
+                </Text>
+              </View>
             </TouchableOpacity>
-          </View>
-        ) : (
+          )}
+
           <TouchableOpacity
-            testID="signin"
-            onPress={signIn}
-            style={[styles.accountCard, { backgroundColor: colors.surface, borderColor: colors.border }]}
+            testID="upgrade-cta"
+            onPress={() => router.push("/paywall")}
+            activeOpacity={0.7}
+            style={[
+              styles.upgradeCard,
+              {
+                backgroundColor: access?.premium ? colors.primarySurface : colors.surface,
+                borderColor: access?.premium ? colors.primary : colors.border,
+              },
+            ]}
           >
-            <Text style={{ color: colors.text, fontFamily: fonts.bodySemibold, fontSize: 15 }}>
-              Sign in with Google
-            </Text>
-            <Text style={{ color: colors.textMuted, fontFamily: fonts.body, fontSize: 13, marginTop: 2 }}>
-              Sync across devices. Required to purchase.
+            <Sparkles size={18} color={access?.premium ? colors.primary : colors.primary} strokeWidth={1.6} />
+            <View style={{ flex: 1, marginLeft: spacing.md }}>
+              <Text style={{ color: colors.text, fontFamily: fonts.bodySemibold, fontSize: 16 }}>
+                {access?.premium ? "Otter Premium — active" : "Otter Premium"}
+              </Text>
+              <Text style={{ color: colors.textMuted, fontFamily: fonts.body, fontSize: 13, marginTop: 2 }}>
+                {access?.premium
+                  ? `You're supporting Otterly. Thanks.`
+                  : `Free tier: ${access?.limits?.shrinks_today ?? 0} / ${access?.limits?.shrinks_cap ?? 3} shrinks today.`}
+              </Text>
+            </View>
+            <ChevronRight size={20} color={colors.textSubtle} strokeWidth={1.4} />
+          </TouchableOpacity>
+
+          <Text style={[styles.section, { color: colors.textSubtle, fontFamily: fonts.body }]}>
+            settings
+          </Text>
+
+          <View style={[styles.settingsGroup, { borderColor: colors.border }]}>
+            <View style={styles.row}>
+              <Text style={[styles.rowLabel, { color: colors.text, fontFamily: fonts.bodySemibold }]}>
+                Name
+              </Text>
+              <TextInput
+                testID="settings-name"
+                value={name}
+                onChangeText={setName}
+                placeholder="you"
+                placeholderTextColor={colors.textSubtle}
+                style={[styles.rowInput, { color: colors.textMuted, fontFamily: fonts.body }]}
+              />
+            </View>
+            <View style={[styles.divider, { backgroundColor: colors.border }]} />
+            <View style={styles.row}>
+              <Text style={[styles.rowLabel, { color: colors.text, fontFamily: fonts.bodySemibold }]}>
+                Reminder time
+              </Text>
+              <TextInput
+                testID="settings-reminder"
+                value={reminder}
+                onChangeText={setReminder}
+                placeholder="20:00"
+                placeholderTextColor={colors.textSubtle}
+                style={[styles.rowInput, { color: colors.textMuted, fontFamily: fonts.numeric }]}
+              />
+            </View>
+            <View style={[styles.divider, { backgroundColor: colors.border }]} />
+            <View style={styles.row}>
+              <Text style={[styles.rowLabel, { color: colors.text, fontFamily: fonts.bodySemibold }]}>
+                Dark mode
+              </Text>
+              <Switch
+                testID="settings-dark"
+                value={isDark}
+                onValueChange={(v) => setMode(v ? "dark" : "light")}
+                trackColor={{ true: colors.primary, false: colors.border }}
+                thumbColor="#FFFFFF"
+              />
+            </View>
+          </View>
+
+          <TouchableOpacity
+            testID="settings-follow-system"
+            onPress={() => setMode("system")}
+            style={{ paddingVertical: spacing.md, alignItems: "center", marginTop: spacing.sm }}
+          >
+            <Text style={{
+              color: mode === "system" ? colors.primary : colors.textSubtle,
+              fontFamily: fonts.body,
+              fontSize: 13,
+            }}>
+              {mode === "system" ? "· following your device ·" : "follow device"}
             </Text>
           </TouchableOpacity>
-        )}
-
-        <TouchableOpacity
-          testID="upgrade-cta"
-          onPress={() => router.push("/paywall")}
-          style={[
-            styles.upgradeCard,
-            { backgroundColor: access?.premium ? colors.primarySurface : colors.surface, borderColor: access?.premium ? colors.primary : colors.border },
-          ]}
-        >
-          <Sparkles size={16} color={access?.premium ? colors.primary : colors.accent} strokeWidth={1.6} />
-          <View style={{ flex: 1, marginLeft: spacing.md }}>
-            <Text style={{ color: colors.text, fontFamily: fonts.bodySemibold, fontSize: 15 }}>
-              {access?.premium ? "Otter Premium — active" : "Otter Premium"}
-            </Text>
-            <Text style={{ color: colors.textMuted, fontFamily: fonts.body, fontSize: 13, marginTop: 2 }}>
-              {access?.premium
-                ? `You're supporting Otterly. Thanks.`
-                : `Free tier: ${access?.limits?.shrinks_today ?? 0} / ${access?.limits?.shrinks_cap ?? 3} shrinks today.`}
-            </Text>
-          </View>
-          <ChevronRight size={18} color={colors.textSubtle} strokeWidth={1.4} />
-        </TouchableOpacity>
-
-        <Text style={[styles.section, { color: colors.textSubtle, fontFamily: fonts.body }]}>
-          settings
-        </Text>
-
-        <View style={[styles.row, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-          <Text style={[styles.rowLabel, { color: colors.textMuted, fontFamily: fonts.body }]}>
-            Name
-          </Text>
-          <TextInput
-            testID="settings-name"
-            value={name}
-            onChangeText={setName}
-            placeholder="you"
-            placeholderTextColor={colors.textSubtle}
-            style={[styles.rowInput, { color: colors.text, fontFamily: fonts.body }]}
-          />
         </View>
-
-        <View style={[styles.row, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-          <Text style={[styles.rowLabel, { color: colors.textMuted, fontFamily: fonts.body }]}>
-            Reminder time
-          </Text>
-          <TextInput
-            testID="settings-reminder"
-            value={reminder}
-            onChangeText={setReminder}
-            placeholder="20:00"
-            placeholderTextColor={colors.textSubtle}
-            style={[styles.rowInput, { color: colors.text, fontFamily: fonts.numeric }]}
-          />
-        </View>
-
-        <View style={[styles.row, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-          <Text style={[styles.rowLabel, { color: colors.textMuted, fontFamily: fonts.body }]}>
-            Dark mode
-          </Text>
-          <Switch
-            testID="settings-dark"
-            value={isDark}
-            onValueChange={(v) => setMode(v ? "dark" : "light")}
-            trackColor={{ true: colors.primary, false: colors.border }}
-            thumbColor={colors.background}
-          />
-        </View>
-
-        <TouchableOpacity
-          testID="settings-follow-system"
-          onPress={() => setMode("system")}
-          style={{ paddingVertical: spacing.md, alignItems: "center" }}
-        >
-          <Text style={{
-            color: mode === "system" ? colors.primary : colors.textSubtle,
-            fontFamily: fonts.body,
-            fontSize: 13,
-          }}>
-            {mode === "system" ? "· following your device ·" : "follow device"}
-          </Text>
-        </TouchableOpacity>
-
-        <View style={{ height: spacing.xxl }} />
       </ScrollView>
     </SafeAreaView>
   );
@@ -222,47 +211,33 @@ export default function YouScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1 },
-  scroll: { padding: spacing.lg },
-  eyebrow: { fontSize: 12, letterSpacing: 4, textTransform: "uppercase", marginBottom: spacing.xs },
-  title: { fontSize: 30, lineHeight: 38, marginBottom: spacing.lg },
-  streakCard: {
-    borderWidth: 1,
-    borderRadius: radii.lg,
-    padding: spacing.xl,
+  streakWrap: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.xl,
+    paddingBottom: spacing.xl,
     alignItems: "center",
-    marginBottom: spacing.xl,
   },
-  rippleWrap: { position: "relative", width: 120, height: 120, alignItems: "center", justifyContent: "center" },
-  rippleCenter: { position: "absolute", alignItems: "center", justifyContent: "center" },
-  dayNumber: { fontSize: 40, lineHeight: 44 },
-  dayLabel: { fontSize: 11, letterSpacing: 3, textTransform: "uppercase", marginTop: 4 },
-  streakLine: { fontSize: 15, marginTop: spacing.base, textAlign: "center" },
-  streakSub: { fontSize: 13, marginTop: 4 },
-  section: {
-    fontSize: 11,
-    letterSpacing: 4,
-    textTransform: "uppercase",
-    marginBottom: spacing.md,
-    marginTop: spacing.md,
+  streakLine: {
+    fontSize: 20,
+    lineHeight: 28,
+    marginTop: spacing.xl,
+    textAlign: "center",
   },
-  row: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    borderWidth: 1,
-    borderRadius: radii.lg,
-    paddingHorizontal: spacing.base,
-    paddingVertical: spacing.md,
-    marginBottom: spacing.sm,
-    minHeight: 56,
-  },
-  rowLabel: { fontSize: 14 },
-  rowInput: { fontSize: 15, textAlign: "right", flex: 1, marginLeft: spacing.base },
+  streakSub: { fontSize: 13, marginTop: 6 },
+  content: { paddingHorizontal: spacing.lg },
   accountCard: {
     borderWidth: 1,
     borderRadius: radii.lg,
     padding: spacing.base,
     marginBottom: spacing.md,
+  },
+  googleBadge: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
   },
   upgradeCard: {
     flexDirection: "row",
@@ -272,4 +247,32 @@ const styles = StyleSheet.create({
     padding: spacing.base,
     marginBottom: spacing.md,
   },
+  section: {
+    fontSize: 11,
+    letterSpacing: 4,
+    textTransform: "uppercase",
+    marginTop: spacing.lg,
+    marginBottom: spacing.md,
+  },
+  settingsGroup: {
+    borderWidth: 1,
+    borderRadius: radii.lg,
+    overflow: "hidden",
+  },
+  row: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: spacing.base,
+    paddingVertical: spacing.base,
+    minHeight: 56,
+  },
+  rowLabel: { fontSize: 15 },
+  rowInput: {
+    fontSize: 15,
+    textAlign: "right",
+    flex: 1,
+    marginLeft: spacing.base,
+  },
+  divider: { height: 1, marginHorizontal: spacing.base },
 });
