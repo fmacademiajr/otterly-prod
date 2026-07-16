@@ -9,11 +9,12 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { Check, X, RotateCcw, Play, Pause } from "lucide-react-native";
+import { Check, X, RotateCcw, Play, Pause, Sparkles } from "lucide-react-native";
+import * as Haptics from "expo-haptics";
 
 import { OtterButton, SoftExit } from "@/src/components/OtterButton";
 import { WaterWave } from "@/src/components/motifs";
-import { api, type Step, type Task } from "@/src/lib/api";
+import { api, ApiError, type Step, type Task } from "@/src/lib/api";
 import { useTheme } from "@/src/theme/ThemeProvider";
 import { fonts, radii, spacing } from "@/src/theme/tokens";
 
@@ -29,6 +30,7 @@ export default function ShrinkScreen() {
   const [difficulty, setDifficulty] = useState<Difficulty>("medium");
   const [loading, setLoading] = useState(true);
   const [shrinking, setShrinking] = useState(false);
+  const [error, setError] = useState<string>("");
 
   // Timer state
   const [activeStep, setActiveStep] = useState<string | null>(null);
@@ -51,7 +53,11 @@ export default function ShrinkScreen() {
         try {
           const shrunk = await api.shrinkTask(id, t?.difficulty || "medium");
           setSteps(shrunk);
-        } catch {}
+        } catch (e: any) {
+          if (e instanceof ApiError && e.status === 429) {
+            setError(e.detail);
+          }
+        }
         setShrinking(false);
       }
     } finally {
@@ -70,26 +76,43 @@ export default function ShrinkScreen() {
     []
   );
 
-  const doShrink = async (d: Difficulty) => {
+  const doShrink = async (d: Difficulty, deep = false) => {
     if (!id) return;
     setDifficulty(d);
+    setError("");
     setShrinking(true);
     try {
-      const shrunk = await api.shrinkTask(id, d);
+      const shrunk = await api.shrinkTask(id, d, deep);
       setSteps(shrunk);
-    } catch {}
+    } catch (e: any) {
+      if (e instanceof ApiError) {
+        if (e.status === 429 || e.status === 402) {
+          setError(e.detail);
+        } else {
+          setError("Something went wrong. Try again.");
+        }
+      }
+    }
     setShrinking(false);
   };
 
   const reshrink = () => doShrink(difficulty);
+  const deepShrink = () => doShrink(difficulty, true);
 
   const toggle = async (step: Step) => {
+    // haptics for the completion moment
+    if (!step.done) {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+    }
     // optimistic
     setSteps((prev) =>
       prev.map((s) => (s.id === step.id ? { ...s, done: !s.done } : s))
     );
     try {
       await api.toggleStep(step.id, !step.done);
+      if (!step.done) {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+      }
     } catch {
       // revert
       setSteps((prev) =>
@@ -219,6 +242,24 @@ export default function ShrinkScreen() {
           </View>
         ) : null}
 
+        {error ? (
+          <TouchableOpacity
+            testID="shrink-error-upgrade"
+            onPress={() => router.push("/paywall")}
+            style={[
+              styles.errorBanner,
+              { backgroundColor: colors.surfaceMuted, borderColor: colors.border },
+            ]}
+          >
+            <Text style={{ color: colors.text, fontFamily: fonts.body, fontSize: 14, lineHeight: 20 }}>
+              {error}
+            </Text>
+            <Text style={{ color: colors.primary, fontFamily: fonts.bodySemibold, fontSize: 13, marginTop: 6 }}>
+              See Otter Premium →
+            </Text>
+          </TouchableOpacity>
+        ) : null}
+
         <Text style={[styles.section, { color: colors.textSubtle, fontFamily: fonts.body }]}>
           micro-steps
         </Text>
@@ -313,6 +354,23 @@ export default function ShrinkScreen() {
         )}
 
         <View style={{ height: spacing.lg }} />
+        <TouchableOpacity
+          testID="deep-shrink"
+          onPress={deepShrink}
+          disabled={shrinking}
+          style={[styles.deepBtn, { borderColor: colors.accent }]}
+        >
+          <Sparkles size={14} color={colors.accent} strokeWidth={1.8} />
+          <Text style={{
+            color: colors.accent,
+            fontFamily: fonts.bodySemibold,
+            fontSize: 13,
+            marginLeft: 6,
+          }}>
+            Deep Shrink (premium)
+          </Text>
+        </TouchableOpacity>
+
         <SoftExit
           label="Come back later"
           testID="shrink-back"
@@ -400,5 +458,22 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     alignItems: "center",
     justifyContent: "center",
+  },
+  errorBanner: {
+    borderWidth: 1,
+    borderRadius: radii.lg,
+    padding: spacing.base,
+    marginBottom: spacing.lg,
+  },
+  deepBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderRadius: radii.pill,
+    paddingHorizontal: spacing.base,
+    paddingVertical: spacing.md,
+    alignSelf: "center",
+    marginBottom: spacing.md,
   },
 });

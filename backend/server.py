@@ -1,29 +1,36 @@
 """
-Otterly backend — calm ADHD task-starter.
+Otterly backend — calm ADHD task-starter, v2 (auth + entitlements + rate limits).
 
-Endpoints (all prefixed with /api):
-  POST   /api/tasks                 create a task (inbox)
-  GET    /api/tasks                 list all tasks
-  DELETE /api/tasks/{task_id}       delete a task
-  POST   /api/tasks/{task_id}/shrink  ask AI to break a task into micro-steps
-  PATCH  /api/steps/{step_id}       toggle a micro-step done/undone
-  POST   /api/next                  ask AI to pick the next best micro-step (energy-aware)
-  POST   /api/braindump             ask AI to split a paragraph into task candidates
-  POST   /api/room/message          send a message to the Sit-With-Me AI body-double
-  GET    /api/room/history/{session_id}   fetch conversation history
-  GET    /api/streak                forgiving 7-day streak stats
-  GET    /api/                      health
+Identity model:
+  - Signed-in users: Bearer session_token → user_id
+  - Anonymous users: X-Device-Id header → device_id
+Data scoping: every task / step / activity / room_message carries "owner" (user_id or device_id).
+
+Rate limits (per-day, per-owner):
+  - free tier:  3 shrinks, 5 braindumps, 20 room messages, unlimited next-picks
+  - premium:    unlimited
+
+Endpoints all under /api. Auth endpoints:
+  POST   /api/auth/session       exchange Emergent session_token → app session
+  GET    /api/auth/me            current user profile
+  POST   /api/auth/logout        drop server session
+  GET    /api/me/access          entitlement snapshot { premium: bool, plan: str, limits }
+  POST   /api/webhooks/revenuecat  RevenueCat webhook (HMAC-signed)
 """
-from fastapi import FastAPI, APIRouter, HTTPException
+from fastapi import FastAPI, APIRouter, HTTPException, Request, Header, Depends
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import json
+import hmac
+import hashlib
+import time
 import logging
+import httpx
 from pathlib import Path
 from pydantic import BaseModel, Field
-from typing import List, Optional, Literal
+from typing import List, Optional, Literal, Tuple
 import uuid
 from datetime import datetime, timezone, timedelta
 
@@ -35,9 +42,15 @@ load_dotenv(ROOT_DIR / ".env")
 MONGO_URL = os.environ["MONGO_URL"]
 DB_NAME = os.environ["DB_NAME"]
 EMERGENT_LLM_KEY = os.environ["EMERGENT_LLM_KEY"]
+REVENUECAT_WEBHOOK_SECRET = os.environ.get("REVENUECAT_WEBHOOK_SECRET", "")
+
+EMERGENT_SESSION_DATA_URL = "https://demobackend.emergentagent.com/auth/v1/env/oauth/session-data"
 
 client = AsyncIOMotorClient(MONGO_URL)
 db = client[DB_NAME]
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+logger = logging.getLogger("otterly")
 
 app = FastAPI(title="Otterly API")
 api = APIRouter(prefix="/api")
@@ -67,18 +80,19 @@ class Step(BaseModel):
     task_id: str
     order: int
     text: str
-    minutes: int = 5  # 5, 10, or 25
+    minutes: int = 5
     done: bool = False
     completed_at: Optional[str] = None
 
 
 class ShrinkRequest(BaseModel):
     difficulty: Difficulty = "medium"
+    deep: bool = False  # premium: use Opus-4-8 for a deeper shrink
 
 
 class NextRequest(BaseModel):
     energy: Energy = "medium"
-    minutes: Optional[int] = None  # available time in minutes
+    minutes: Optional[int] = None
 
 
 class NextResponse(BaseModel):
@@ -99,7 +113,7 @@ class BraindumpResponse(BaseModel):
 class RoomMessage(BaseModel):
     session_id: str
     text: str
-    goal: Optional[str] = None  # what the user said they'd work on
+    goal: Optional[str] = None
 
 
 class RoomResponse(BaseModel):
@@ -120,39 +134,133 @@ class StreakStats(BaseModel):
     todays_steps: int
 
 
-# ---------- Helpers ----------
-
-def _no_id(d):
-    if d is None:
-        return None
-    d = dict(d)
-    d.pop("_id", None)
-    return d
+class SessionExchangeRequest(BaseModel):
+    session_token: str
+    device_id: Optional[str] = None
 
 
-async def _llm_chat(session_id: str, system: str) -> LlmChat:
+class UserProfile(BaseModel):
+    user_id: str
+    email: str
+    name: str
+    picture: Optional[str] = None
+
+
+class AccessResponse(BaseModel):
+    premium: bool
+    plan: str  # "free" | "otter_monthly" | "otter_yearly" | "otter_lifetime"
+    limits: dict  # {"shrinks_today": int, "shrinks_cap": int, ...}
+
+
+# ---------- Auth helpers ----------
+
+async def resolve_owner(
+    authorization: Optional[str] = Header(default=None),
+    x_device_id: Optional[str] = Header(default=None),
+) -> Tuple[str, Optional[str]]:
+    """
+    Returns (owner_id, user_id).
+    - Signed-in: owner_id == user_id (also returned as second element)
+    - Anonymous: owner_id == device_id, user_id == None
+    """
+    if authorization and authorization.lower().startswith("bearer "):
+        token = authorization.split(" ", 1)[1].strip()
+        session_doc = await db.user_sessions.find_one({"session_token": token}, {"_id": 0})
+        if session_doc:
+            expires = session_doc.get("expires_at")
+            if isinstance(expires, datetime):
+                if expires.tzinfo is None:
+                    expires = expires.replace(tzinfo=timezone.utc)
+                if expires > datetime.now(timezone.utc):
+                    uid = session_doc["user_id"]
+                    return uid, uid
+    if x_device_id:
+        return f"dev:{x_device_id}", None
+    raise HTTPException(401, "missing identity (Authorization Bearer or X-Device-Id required)")
+
+
+async def require_user(
+    authorization: Optional[str] = Header(default=None),
+) -> UserProfile:
+    if not authorization or not authorization.lower().startswith("bearer "):
+        raise HTTPException(401, "sign in required")
+    token = authorization.split(" ", 1)[1].strip()
+    session = await db.user_sessions.find_one({"session_token": token}, {"_id": 0})
+    if not session:
+        raise HTTPException(401, "invalid session")
+    expires = session.get("expires_at")
+    if isinstance(expires, datetime):
+        if expires.tzinfo is None:
+            expires = expires.replace(tzinfo=timezone.utc)
+        if expires <= datetime.now(timezone.utc):
+            raise HTTPException(401, "session expired")
+    user = await db.users.find_one({"user_id": session["user_id"]}, {"_id": 0})
+    if not user:
+        raise HTTPException(401, "user not found")
+    return UserProfile(**user)
+
+
+# ---------- Entitlement ----------
+
+FREE_LIMITS = {"shrinks": 3, "braindumps": 5, "room_messages": 20}
+
+
+async def get_entitlement(owner_id: str, user_id: Optional[str]) -> dict:
+    """Return {'active': bool, 'plan': str}."""
+    if not user_id:
+        return {"active": False, "plan": "free"}
+    doc = await db.entitlements.find_one({"user_id": user_id}, {"_id": 0})
+    if not doc:
+        return {"active": False, "plan": "free"}
+    prem = doc.get("premium") or {}
+    return {"active": bool(prem.get("active")), "plan": prem.get("product_id") or "free"}
+
+
+async def check_rate(owner_id: str, kind: str, cap: int) -> Tuple[bool, int]:
+    """Returns (allowed, current_count)."""
+    today = datetime.now(timezone.utc).date().isoformat()
+    key = {"owner": owner_id, "kind": kind, "date": today}
+    doc = await db.rate_counters.find_one(key, {"_id": 0, "count": 1})
+    count = int(doc.get("count") if doc else 0)
+    return count < cap, count
+
+
+async def bump_rate(owner_id: str, kind: str):
+    today = datetime.now(timezone.utc).date().isoformat()
+    await db.rate_counters.update_one(
+        {"owner": owner_id, "kind": kind, "date": today},
+        {"$inc": {"count": 1}, "$setOnInsert": {"created_at": datetime.now(timezone.utc).isoformat()}},
+        upsert=True,
+    )
+
+
+async def counts_today(owner_id: str) -> dict:
+    today = datetime.now(timezone.utc).date().isoformat()
+    docs = await db.rate_counters.find({"owner": owner_id, "date": today}, {"_id": 0}).to_list(20)
+    return {d["kind"]: int(d.get("count", 0)) for d in docs}
+
+
+# ---------- LLM helpers ----------
+
+def _llm_chat(session_id: str, system: str, deep: bool = False) -> LlmChat:
+    model = "claude-opus-4-8" if deep else "claude-sonnet-4-6"
     return LlmChat(
         api_key=EMERGENT_LLM_KEY,
         session_id=session_id,
         system_message=system,
-    ).with_model("anthropic", "claude-sonnet-4-6")
+    ).with_model("anthropic", model)
 
 
-async def _llm_json(session_id: str, system: str, user_text: str) -> dict:
-    """Send a one-shot message and parse JSON reply (with a fenced-code strip)."""
-    chat = await _llm_chat(session_id, system)
+async def _llm_json(session_id: str, system: str, user_text: str, deep: bool = False) -> dict:
+    chat = _llm_chat(session_id, system, deep=deep)
     raw = await chat.send_message(UserMessage(text=user_text))
     text = (raw or "").strip()
-    # Strip ```json fences if present
     if text.startswith("```"):
         text = text.strip("`")
-        # remove leading "json\n"
         if text.lower().startswith("json"):
             text = text[4:].lstrip("\n").lstrip()
-        # remove trailing ``` if any
         if text.endswith("```"):
             text = text[:-3].rstrip()
-    # try find first { or [
     for i, ch in enumerate(text):
         if ch in "{[":
             text = text[i:]
@@ -161,39 +269,217 @@ async def _llm_json(session_id: str, system: str, user_text: str) -> dict:
         return json.loads(text)
     except json.JSONDecodeError as e:
         logger.warning("LLM JSON parse failed: %s | raw=%r", e, raw)
-        raise HTTPException(status_code=502, detail="AI returned invalid response, please try again.")
+        raise HTTPException(status_code=502, detail="AI returned an unusable response — please try again.")
 
 
-# ---------- Task endpoints ----------
+# ---------- Health ----------
 
 @api.get("/")
 async def root():
     return {"ok": True, "app": "otterly"}
 
 
+# ---------- Auth endpoints ----------
+
+@api.post("/auth/session")
+async def auth_session(payload: SessionExchangeRequest):
+    """Client hands us the emergent session_token from redirect, we verify and store a server session."""
+    async with httpx.AsyncClient(timeout=15) as hc:
+        r = await hc.get(EMERGENT_SESSION_DATA_URL, headers={"X-Session-ID": payload.session_token})
+    if r.status_code != 200:
+        raise HTTPException(401, "invalid session token")
+    data = r.json()
+    email = data.get("email")
+    if not email:
+        raise HTTPException(400, "no email in session data")
+    name = data.get("name") or email.split("@")[0]
+    picture = data.get("picture")
+    server_token = data.get("session_token") or payload.session_token
+
+    # Upsert user by email
+    existing = await db.users.find_one({"email": email}, {"_id": 0})
+    if existing:
+        user_id = existing["user_id"]
+        await db.users.update_one(
+            {"user_id": user_id},
+            {"$set": {"name": name, "picture": picture}},
+        )
+    else:
+        user_id = f"user_{uuid.uuid4().hex[:12]}"
+        await db.users.insert_one({
+            "user_id": user_id,
+            "email": email,
+            "name": name,
+            "picture": picture,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        })
+
+    # Store session (upsert to avoid duplicates)
+    expires_at = datetime.now(timezone.utc) + timedelta(days=7)
+    await db.user_sessions.update_one(
+        {"session_token": server_token},
+        {"$set": {
+            "session_token": server_token,
+            "user_id": user_id,
+            "expires_at": expires_at,
+            "created_at": datetime.now(timezone.utc),
+        }},
+        upsert=True,
+    )
+
+    # Migrate device data → user_id
+    if payload.device_id:
+        old = f"dev:{payload.device_id}"
+        await db.tasks.update_many({"owner": old}, {"$set": {"owner": user_id}})
+        await db.steps.update_many({"owner": old}, {"$set": {"owner": user_id}})
+        await db.activity.update_many({"owner": old}, {"$set": {"owner": user_id}})
+        await db.room_messages.update_many({"owner": old}, {"$set": {"owner": user_id}})
+
+    return {
+        "user_id": user_id,
+        "email": email,
+        "name": name,
+        "picture": picture,
+        "session_token": server_token,
+        "expires_at": expires_at.isoformat(),
+    }
+
+
+@api.get("/auth/me", response_model=UserProfile)
+async def auth_me(user: UserProfile = Depends(require_user)):
+    return user
+
+
+@api.post("/auth/logout")
+async def auth_logout(authorization: Optional[str] = Header(default=None)):
+    if authorization and authorization.lower().startswith("bearer "):
+        token = authorization.split(" ", 1)[1].strip()
+        await db.user_sessions.delete_one({"session_token": token})
+    return {"ok": True}
+
+
+# ---------- Entitlement ----------
+
+@api.get("/me/access", response_model=AccessResponse)
+async def me_access(who=Depends(resolve_owner)):
+    owner_id, user_id = who
+    ent = await get_entitlement(owner_id, user_id)
+    counts = await counts_today(owner_id)
+    return AccessResponse(
+        premium=ent["active"],
+        plan=ent["plan"] if ent["active"] else "free",
+        limits={
+            "shrinks_today": counts.get("shrink", 0),
+            "shrinks_cap": FREE_LIMITS["shrinks"] if not ent["active"] else -1,
+            "braindumps_today": counts.get("braindump", 0),
+            "braindumps_cap": FREE_LIMITS["braindumps"] if not ent["active"] else -1,
+            "room_today": counts.get("room", 0),
+            "room_cap": FREE_LIMITS["room_messages"] if not ent["active"] else -1,
+        },
+    )
+
+
+# ---------- RevenueCat webhook ----------
+
+def _verify_rc_signature(raw_body: bytes, header: Optional[str]) -> bool:
+    if not REVENUECAT_WEBHOOK_SECRET or not header:
+        return False
+    parts = dict(part.split("=", 1) for part in header.split(",") if "=" in part)
+    ts = parts.get("t")
+    v1 = parts.get("v1")
+    if not ts or not v1:
+        return False
+    if abs(int(time.time()) - int(ts)) > 300:
+        return False
+    signed = f"{ts}.".encode() + raw_body
+    digest = hmac.new(REVENUECAT_WEBHOOK_SECRET.encode(), signed, hashlib.sha256).hexdigest()
+    return hmac.compare_digest(digest, v1)
+
+
+@api.post("/webhooks/revenuecat")
+async def revenuecat_webhook(request: Request):
+    raw = await request.body()
+    sig = (
+        request.headers.get("X-RevenueCat-Webhook-Signature")
+        or request.headers.get("X-RevenueCat-Signature")
+    )
+    if not _verify_rc_signature(raw, sig):
+        raise HTTPException(401, "bad signature")
+
+    payload = json.loads(raw)
+    event = payload.get("event") or {}
+    event_id = event.get("id")
+    if not event_id:
+        raise HTTPException(400, "no event id")
+
+    # idempotency
+    seen = await db.webhook_events.find_one({"event_id": event_id})
+    if seen:
+        return {"ok": True, "dedup": True}
+    await db.webhook_events.insert_one({
+        "event_id": event_id,
+        "at": datetime.now(timezone.utc).isoformat(),
+    })
+
+    user_id = event.get("app_user_id")
+    if not user_id:
+        return {"ok": True, "no_user": True}
+    event_type = event.get("type", "")
+
+    active_types = {"INITIAL_PURCHASE", "RENEWAL", "UNCANCELLATION", "PRODUCT_CHANGE", "NON_RENEWING_PURCHASE"}
+    if event_type == "EXPIRATION":
+        is_active = False
+    elif event_type == "CANCELLATION":
+        is_active = True  # still active until expiration
+    else:
+        is_active = event_type in active_types
+
+    await db.entitlements.update_one(
+        {"user_id": user_id},
+        {"$set": {
+            "premium.active": is_active,
+            "premium.product_id": event.get("product_id"),
+            "premium.expires_at_ms": event.get("expiration_at_ms"),
+            "premium.last_event_id": event_id,
+            "premium.entitlements": event.get("entitlement_ids") or [],
+            "premium.updated_at": datetime.now(timezone.utc).isoformat(),
+        }},
+        upsert=True,
+    )
+    return {"ok": True}
+
+
+# ---------- Task endpoints ----------
+
 @api.post("/tasks", response_model=Task)
-async def create_task(payload: TaskCreate):
+async def create_task(payload: TaskCreate, who=Depends(resolve_owner)):
+    owner_id, _ = who
     task = Task(title=payload.title.strip(), note=(payload.note or "").strip() or None)
-    await db.tasks.insert_one(task.dict())
+    doc = task.dict()
+    doc["owner"] = owner_id
+    await db.tasks.insert_one(doc)
     return task
 
 
 @api.get("/tasks", response_model=List[Task])
-async def list_tasks():
-    docs = await db.tasks.find({}, {"_id": 0}).sort("created_at", -1).to_list(500)
+async def list_tasks(who=Depends(resolve_owner)):
+    owner_id, _ = who
+    docs = await db.tasks.find({"owner": owner_id}, {"_id": 0, "owner": 0}).sort("created_at", -1).to_list(500)
     return [Task(**d) for d in docs]
 
 
 @api.delete("/tasks/{task_id}")
-async def delete_task(task_id: str):
-    await db.tasks.delete_one({"id": task_id})
-    await db.steps.delete_many({"task_id": task_id})
+async def delete_task(task_id: str, who=Depends(resolve_owner)):
+    owner_id, _ = who
+    await db.tasks.delete_one({"id": task_id, "owner": owner_id})
+    await db.steps.delete_many({"task_id": task_id, "owner": owner_id})
     return {"ok": True}
 
 
 @api.get("/tasks/{task_id}/steps", response_model=List[Step])
-async def list_steps(task_id: str):
-    docs = await db.steps.find({"task_id": task_id}, {"_id": 0}).sort("order", 1).to_list(200)
+async def list_steps(task_id: str, who=Depends(resolve_owner)):
+    owner_id, _ = who
+    docs = await db.steps.find({"task_id": task_id, "owner": owner_id}, {"_id": 0, "owner": 0}).sort("order", 1).to_list(200)
     return [Step(**d) for d in docs]
 
 
@@ -208,7 +494,7 @@ Rules:
 - Steps must start with a verb ("Open", "Walk to", "Type", "Send").
 - Never generic ("plan it out"). Always concrete ("Open Gmail and start a draft to Jane").
 - Tone: warm, non-shame, brief. Never mention how the user 'should' have done this earlier.
-- For difficulty "easy": more steps, smaller (5 min each). For "medium": mid (10 min). For "hard": fewer/bigger steps (up to 25 min) because the user has focus.
+- For difficulty "easy": more steps, smaller (5 min each). For "medium": mid (10 min). For "hard": fewer/bigger steps (up to 25 min).
 
 Return JSON shape:
 {"steps": [{"text": "...", "minutes": 5}]}
@@ -216,40 +502,58 @@ Return JSON shape:
 
 
 @api.post("/tasks/{task_id}/shrink", response_model=List[Step])
-async def shrink_task(task_id: str, payload: ShrinkRequest):
-    task_doc = await db.tasks.find_one({"id": task_id}, {"_id": 0})
+async def shrink_task(task_id: str, payload: ShrinkRequest, who=Depends(resolve_owner)):
+    owner_id, user_id = who
+    ent = await get_entitlement(owner_id, user_id)
+
+    # Deep Shrink is premium-only
+    if payload.deep and not ent["active"]:
+        raise HTTPException(402, "deep-shrink is a premium feature")
+
+    if not ent["active"]:
+        allowed, count = await check_rate(owner_id, "shrink", FREE_LIMITS["shrinks"])
+        if not allowed:
+            raise HTTPException(429, f"free tier: {FREE_LIMITS['shrinks']} shrinks/day. try again tomorrow or upgrade to Otter Premium.")
+
+    task_doc = await db.tasks.find_one({"id": task_id, "owner": owner_id}, {"_id": 0})
     if not task_doc:
         raise HTTPException(404, "task not found")
-    task = Task(**task_doc)
+    task = Task(**{k: v for k, v in task_doc.items() if k != "owner"})
 
     prompt = f"Task: {task.title}\n"
     if task.note:
         prompt += f"Note: {task.note}\n"
     prompt += f"Difficulty preference: {payload.difficulty}\n\nReturn JSON."
 
-    data = await _llm_json(f"shrink-{task_id}-{uuid.uuid4()}", SHRINK_SYSTEM, prompt)
+    data = await _llm_json(
+        f"shrink-{task_id}-{uuid.uuid4()}",
+        SHRINK_SYSTEM,
+        prompt,
+        deep=payload.deep,
+    )
 
     raw_steps = data.get("steps") or []
     if not raw_steps:
         raise HTTPException(502, "AI returned no steps")
 
-    # Clear old steps for a re-shrink
-    await db.steps.delete_many({"task_id": task_id})
+    await db.steps.delete_many({"task_id": task_id, "owner": owner_id})
 
     steps: List[Step] = []
     for i, s in enumerate(raw_steps[:12]):
         minutes = int(s.get("minutes") or 10)
-        # snap to 5/10/25
         minutes = min([5, 10, 25], key=lambda x: abs(x - minutes))
         step = Step(task_id=task_id, order=i, text=str(s.get("text", "")).strip(), minutes=minutes)
         if step.text:
             steps.append(step)
 
     if steps:
-        await db.steps.insert_many([s.dict() for s in steps])
-        await db.tasks.update_one({"id": task_id}, {"$set": {"shrunk": True, "difficulty": payload.difficulty}})
+        docs = [{**s.dict(), "owner": owner_id} for s in steps]
+        await db.steps.insert_many(docs)
+        await db.tasks.update_one({"id": task_id, "owner": owner_id}, {"$set": {"shrunk": True, "difficulty": payload.difficulty}})
 
-    # return without any mongo _id leakage
+    if not ent["active"]:
+        await bump_rate(owner_id, "shrink")
+
     return steps
 
 
@@ -258,16 +562,17 @@ class StepPatch(BaseModel):
 
 
 @api.patch("/steps/{step_id}", response_model=Step)
-async def toggle_step(step_id: str, payload: StepPatch):
-    doc = await db.steps.find_one({"id": step_id}, {"_id": 0})
+async def toggle_step(step_id: str, payload: StepPatch, who=Depends(resolve_owner)):
+    owner_id, _ = who
+    doc = await db.steps.find_one({"id": step_id, "owner": owner_id}, {"_id": 0})
     if not doc:
         raise HTTPException(404, "step not found")
     update = {"done": payload.done}
     if payload.done:
         update["completed_at"] = datetime.now(timezone.utc).isoformat()
-        # log activity
         await db.activity.insert_one({
             "id": str(uuid.uuid4()),
+            "owner": owner_id,
             "step_id": step_id,
             "task_id": doc["task_id"],
             "date": datetime.now(timezone.utc).date().isoformat(),
@@ -275,41 +580,39 @@ async def toggle_step(step_id: str, payload: StepPatch):
         })
     else:
         update["completed_at"] = None
-    await db.steps.update_one({"id": step_id}, {"$set": update})
-    doc = await db.steps.find_one({"id": step_id}, {"_id": 0})
+    await db.steps.update_one({"id": step_id, "owner": owner_id}, {"$set": update})
+    doc = await db.steps.find_one({"id": step_id, "owner": owner_id}, {"_id": 0, "owner": 0})
     return Step(**doc)
 
 
-# ---------- Next (anti-overwhelm hero) ----------
+# ---------- Next ----------
 
 NEXT_SYSTEM = """You are Otterly, a calm ADHD-friendly companion. Your job: given a list of undone micro-steps and the user's current energy, pick the ONE step they should do next. Never overwhelm — just one.
 
 Rules:
 - Return STRICT JSON only.
-- If energy is "low": pick the shortest / lowest-friction step (prefer 5 min, prefer a physical/simple action like "stand up and drink water" style steps).
-- If energy is "medium": pick a mid-effort step (10 min ok).
+- If energy is "low": pick the shortest / lowest-friction step.
+- If energy is "medium": pick a mid-effort step.
 - If energy is "good": pick something meaningful, up to 25 min.
 - If available minutes is provided, do not pick a step longer than that.
-- Give ONE short warm reason (max 12 words, no shame, no cheerleading).
+- Give ONE short warm reason (max 12 words, no shame).
 
 JSON shape: {"step_id": "...", "reason": "..."}
-If no steps fit, return: {"step_id": null, "reason": "..."}"""
+If no steps fit: {"step_id": null, "reason": "..."}"""
 
 
 @api.post("/next", response_model=NextResponse)
-async def next_action(payload: NextRequest):
-    # gather all undone steps across tasks
-    step_docs = await db.steps.find({"done": False}, {"_id": 0}).to_list(300)
+async def next_action(payload: NextRequest, who=Depends(resolve_owner)):
+    owner_id, _ = who
+    step_docs = await db.steps.find({"done": False, "owner": owner_id}, {"_id": 0, "owner": 0}).to_list(300)
     if not step_docs:
         return NextResponse(empty=True, reason="Nothing shrunk yet — add something you're avoiding.")
 
     task_ids = list({s["task_id"] for s in step_docs})
-    task_docs = await db.tasks.find({"id": {"$in": task_ids}}, {"_id": 0}).to_list(500)
+    task_docs = await db.tasks.find({"id": {"$in": task_ids}, "owner": owner_id}, {"_id": 0, "owner": 0}).to_list(500)
     task_map = {t["id"]: t for t in task_docs}
 
-    # Cap what we send to the LLM to keep it fast
     candidates = step_docs[:40]
-
     lines = []
     for s in candidates:
         t = task_map.get(s["task_id"], {})
@@ -319,7 +622,6 @@ async def next_action(payload: NextRequest):
         f"Available minutes: {payload.minutes or 'unspecified'}\n\n"
         f"Undone micro-steps:\n" + "\n".join(lines) + "\n\nReturn JSON."
     )
-
     data = await _llm_json("next-" + str(uuid.uuid4()), NEXT_SYSTEM, user_text)
     step_id = data.get("step_id")
     reason = str(data.get("reason", "")).strip() or "This one's small enough to start."
@@ -329,7 +631,6 @@ async def next_action(payload: NextRequest):
 
     step_doc = next((s for s in candidates if s["id"] == step_id), None)
     if not step_doc:
-        # Fallback: pick shortest that fits
         step_doc = min(candidates, key=lambda s: s["minutes"])
         reason = "Picked the smallest available step."
 
@@ -348,8 +649,8 @@ BRAINDUMP_SYSTEM = """You are Otterly. The user is going to pour out everything 
 
 Rules:
 - Return STRICT JSON only.
-- Each task title is a short imperative (e.g. "File tax return", "Reply to Mom", "Book dentist").
-- Merge duplicates. Skip pure feelings ("I feel bad") — keep only actionable items.
+- Each task title is a short imperative.
+- Merge duplicates. Skip pure feelings.
 - Max 12 items.
 
 JSON shape: {"tasks": ["...", "..."]}
@@ -357,11 +658,22 @@ JSON shape: {"tasks": ["...", "..."]}
 
 
 @api.post("/braindump", response_model=BraindumpResponse)
-async def braindump(payload: BraindumpRequest):
+async def braindump(payload: BraindumpRequest, who=Depends(resolve_owner)):
+    owner_id, user_id = who
+    ent = await get_entitlement(owner_id, user_id)
+    if not ent["active"]:
+        allowed, _ = await check_rate(owner_id, "braindump", FREE_LIMITS["braindumps"])
+        if not allowed:
+            raise HTTPException(429, f"free tier: {FREE_LIMITS['braindumps']} braindumps/day. upgrade for unlimited.")
+
     if not payload.text.strip():
         return BraindumpResponse(tasks=[])
     data = await _llm_json("brain-" + str(uuid.uuid4()), BRAINDUMP_SYSTEM, payload.text)
     tasks = [str(t).strip() for t in (data.get("tasks") or []) if str(t).strip()]
+
+    if not ent["active"]:
+        await bump_rate(owner_id, "braindump")
+
     return BraindumpResponse(tasks=tasks[:12])
 
 
@@ -370,32 +682,33 @@ async def braindump(payload: BraindumpRequest):
 ROOM_SYSTEM = """You are Otterly — a calm AI body-double who sits quietly with the user while they work. You are a companion, not a coach.
 
 Rules:
-- Reply in 1 to 2 short sentences. Never more. Whitespace is a feature.
-- Warm, gentle, low-stim tone. Never cheerlead ("You got this!"). Never shame.
+- Reply in 1 to 2 short sentences. Never more.
+- Warm, gentle, low-stim tone. Never cheerlead. Never shame.
 - If the user shares their goal: acknowledge softly and say you're here.
 - If the user just says "hi" or is silent: greet gently, ask what they'd like to work on.
 - If the user shares progress: acknowledge it in one line ("That's real.").
 - If the user shares a feeling: reflect it briefly, then offer to just sit.
 - No emojis. No exclamation marks unless the user used one first.
-- Never diagnose, never give medical/therapeutic advice. If the user mentions self-harm or crisis, gently say: "I care that you told me. Please reach a real person — 988 (US), 116 123 (UK), or NCMH 1553 (PH)."
+- Never diagnose, never give medical advice. If the user mentions self-harm or crisis, gently say: "I care that you told me. Please reach a real person — 988 (US), 116 123 (UK), or NCMH 1553 (PH)."
 """
 
 
 @api.post("/room/message", response_model=RoomResponse)
-async def room_message(payload: RoomMessage):
-    # store user message
+async def room_message(payload: RoomMessage, who=Depends(resolve_owner)):
+    owner_id, user_id = who
+    ent = await get_entitlement(owner_id, user_id)
+    if not ent["active"]:
+        allowed, _ = await check_rate(owner_id, "room", FREE_LIMITS["room_messages"])
+        if not allowed:
+            raise HTTPException(429, f"free tier: {FREE_LIMITS['room_messages']} room messages/day.")
+
     user_doc = RoomMessageDoc(session_id=payload.session_id, role="user", text=payload.text)
-    await db.room_messages.insert_one(user_doc.dict())
+    await db.room_messages.insert_one({**user_doc.dict(), "owner": owner_id})
 
-    # get prior turns for context (last 10)
+    chat = _llm_chat(payload.session_id, ROOM_SYSTEM)
     history = await db.room_messages.find(
-        {"session_id": payload.session_id}, {"_id": 0}
-    ).sort("created_at", -1).to_list(20)
-    history = list(reversed(history))
-
-    chat = await _llm_chat(payload.session_id, ROOM_SYSTEM)
-    # Send only the latest user text; emergentintegrations manages history via session_id, but
-    # we pass a hint if goal exists.
+        {"session_id": payload.session_id, "owner": owner_id}, {"_id": 0}
+    ).sort("created_at", 1).to_list(20)
     prompt = payload.text
     if payload.goal and len(history) <= 2:
         prompt = f"(User goal for this session: {payload.goal})\n\n{payload.text}"
@@ -403,15 +716,19 @@ async def room_message(payload: RoomMessage):
     reply_text = (reply or "").strip()
 
     otter_doc = RoomMessageDoc(session_id=payload.session_id, role="otter", text=reply_text)
-    await db.room_messages.insert_one(otter_doc.dict())
+    await db.room_messages.insert_one({**otter_doc.dict(), "owner": owner_id})
+
+    if not ent["active"]:
+        await bump_rate(owner_id, "room")
 
     return RoomResponse(reply=reply_text)
 
 
 @api.get("/room/history/{session_id}", response_model=List[RoomMessageDoc])
-async def room_history(session_id: str):
+async def room_history(session_id: str, who=Depends(resolve_owner)):
+    owner_id, _ = who
     docs = await db.room_messages.find(
-        {"session_id": session_id}, {"_id": 0}
+        {"session_id": session_id, "owner": owner_id}, {"_id": 0, "owner": 0}
     ).sort("created_at", 1).to_list(200)
     return [RoomMessageDoc(**d) for d in docs]
 
@@ -419,16 +736,17 @@ async def room_history(session_id: str):
 # ---------- Streak ----------
 
 @api.get("/streak", response_model=StreakStats)
-async def streak():
+async def streak(who=Depends(resolve_owner)):
+    owner_id, _ = who
     today = datetime.now(timezone.utc).date()
     week_start = today - timedelta(days=6)
     docs = await db.activity.find(
-        {"date": {"$gte": week_start.isoformat()}}, {"_id": 0}
+        {"owner": owner_id, "date": {"$gte": week_start.isoformat()}}, {"_id": 0}
     ).to_list(1000)
     days = {d["date"] for d in docs}
     todays = [d for d in docs if d["date"] == today.isoformat()]
 
-    all_days = await db.activity.distinct("date")
+    all_days = await db.activity.distinct("date", {"owner": owner_id})
     return StreakStats(
         days_this_week=len(days),
         total_days=len(all_days),
@@ -447,10 +765,26 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
-logger = logging.getLogger("otterly")
+
+@app.on_event("startup")
+async def _startup_indexes():
+    try:
+        await db.users.create_index("email", unique=True)
+        await db.users.create_index("user_id", unique=True)
+        await db.user_sessions.create_index("session_token", unique=True)
+        await db.user_sessions.create_index("user_id")
+        await db.user_sessions.create_index("expires_at", expireAfterSeconds=0)
+        await db.tasks.create_index([("owner", 1), ("created_at", -1)])
+        await db.steps.create_index([("owner", 1), ("task_id", 1), ("order", 1)])
+        await db.activity.create_index([("owner", 1), ("date", 1)])
+        await db.rate_counters.create_index([("owner", 1), ("kind", 1), ("date", 1)], unique=True)
+        await db.webhook_events.create_index("event_id", unique=True)
+        await db.entitlements.create_index("user_id", unique=True)
+        await db.room_messages.create_index([("owner", 1), ("session_id", 1), ("created_at", 1)])
+    except Exception as e:
+        logger.warning("index creation warning: %s", e)
 
 
 @app.on_event("shutdown")
-async def shutdown_db_client():
+async def _shutdown():
     client.close()

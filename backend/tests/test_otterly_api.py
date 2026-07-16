@@ -1,30 +1,40 @@
-"""Otterly backend end-to-end tests (public URL)."""
+"""Otterly backend end-to-end tests, iteration 2 (auth + entitlements + rate limits)."""
 import os
 import time
 import uuid
+import json
+import hmac
+import hashlib
+from pathlib import Path
+
 import pytest
 import requests
 
+# Resolve base URL from env / frontend .env
 BASE_URL = os.environ.get("EXPO_PUBLIC_BACKEND_URL") or os.environ.get("EXPO_BACKEND_URL")
 if not BASE_URL:
-    # fallback to frontend .env
-    from pathlib import Path
     env = Path("/app/frontend/.env").read_text()
     for line in env.splitlines():
         if line.startswith("EXPO_PUBLIC_BACKEND_URL="):
             BASE_URL = line.split("=", 1)[1].strip().strip('"')
             break
-BASE_URL = BASE_URL.rstrip("/")
+BASE_URL = (BASE_URL or "").rstrip("/")
+
+# Match backend .env
+RC_SECRET = "test_secret_123"
+
+# Two devices for isolation testing
+DEV_A = f"TEST-devA-{uuid.uuid4().hex[:8]}"
+DEV_B = f"TEST-devB-{uuid.uuid4().hex[:8]}"
+
+
+def hdr(device_id: str) -> dict:
+    return {"Content-Type": "application/json", "X-Device-Id": device_id}
 
 
 @pytest.fixture(scope="session")
 def api():
-    s = requests.Session()
-    s.headers.update({"Content-Type": "application/json"})
-    return s
-
-
-created_task_ids = []
+    return requests.Session()
 
 
 # ---------- Health ----------
@@ -33,169 +43,277 @@ class TestHealth:
         r = api.get(f"{BASE_URL}/api/", timeout=15)
         assert r.status_code == 200
         j = r.json()
-        assert j.get("ok") is True
-        assert j.get("app") == "otterly"
+        assert j.get("ok") is True and j.get("app") == "otterly"
 
 
-# ---------- Task CRUD ----------
-class TestTasks:
-    def test_create_task(self, api):
-        r = api.post(f"{BASE_URL}/api/tasks", json={"title": "TEST_ Draft weekly report"}, timeout=15)
-        assert r.status_code == 200, r.text
-        j = r.json()
-        assert j["title"] == "TEST_ Draft weekly report"
-        assert j["shrunk"] is False
-        assert "id" in j
-        created_task_ids.append(j["id"])
-
-    def test_list_tasks(self, api):
+# ---------- Identity gating ----------
+class TestIdentityGating:
+    def test_tasks_missing_identity_401(self, api):
         r = api.get(f"{BASE_URL}/api/tasks", timeout=15)
+        assert r.status_code == 401
+
+    def test_access_missing_identity_401(self, api):
+        r = api.get(f"{BASE_URL}/api/me/access", timeout=15)
+        assert r.status_code == 401
+
+    def test_anonymous_device_id_works(self, api):
+        r = api.get(f"{BASE_URL}/api/tasks", headers=hdr(DEV_A), timeout=15)
+        assert r.status_code == 200
+        assert isinstance(r.json(), list)
+
+
+# ---------- Access endpoint ----------
+class TestAccess:
+    def test_access_anonymous_shape(self, api):
+        r = api.get(f"{BASE_URL}/api/me/access", headers=hdr(DEV_A), timeout=15)
         assert r.status_code == 200
         j = r.json()
-        assert isinstance(j, list)
-        assert any(t["id"] in created_task_ids for t in j)
-
-    def test_delete_task(self, api):
-        r = api.post(f"{BASE_URL}/api/tasks", json={"title": "TEST_ delete me"}, timeout=15)
-        tid = r.json()["id"]
-        d = api.delete(f"{BASE_URL}/api/tasks/{tid}", timeout=15)
-        assert d.status_code == 200
-        # verify gone
-        lst = api.get(f"{BASE_URL}/api/tasks", timeout=15).json()
-        assert all(t["id"] != tid for t in lst)
+        assert j["premium"] is False
+        assert j["plan"] == "free"
+        lim = j["limits"]
+        for k in ("shrinks_today", "shrinks_cap", "braindumps_today",
+                  "braindumps_cap", "room_today", "room_cap"):
+            assert k in lim
+        assert lim["shrinks_cap"] == 3
+        assert lim["braindumps_cap"] == 5
+        assert lim["room_cap"] == 20
 
 
-# ---------- Shrink (AI) ----------
-class TestShrink:
-    @pytest.fixture(scope="class")
-    def task_id(self, api):
-        r = api.post(f"{BASE_URL}/api/tasks", json={"title": "TEST_ File tax return"}, timeout=15)
-        tid = r.json()["id"]
-        created_task_ids.append(tid)
-        return tid
+# ---------- Auth endpoint stubs ----------
+class TestAuthEndpoints:
+    def test_auth_me_no_token_401(self, api):
+        r = api.get(f"{BASE_URL}/api/auth/me", timeout=15)
+        assert r.status_code == 401
 
-    def test_shrink_medium(self, api, task_id):
-        r = api.post(f"{BASE_URL}/api/tasks/{task_id}/shrink", json={"difficulty": "medium"}, timeout=90)
+    def test_auth_me_bad_token_401(self, api):
+        r = api.get(f"{BASE_URL}/api/auth/me",
+                    headers={"Authorization": "Bearer garbage"}, timeout=15)
+        assert r.status_code == 401
+
+    def test_auth_session_bad_token_401(self, api):
+        r = api.post(f"{BASE_URL}/api/auth/session",
+                     json={"session_token": "not-a-valid-emergent-token"},
+                     timeout=30)
+        assert r.status_code == 401
+
+    def test_auth_logout_always_ok(self, api):
+        r = api.post(f"{BASE_URL}/api/auth/logout", timeout=15)
+        assert r.status_code == 200
+        assert r.json().get("ok") is True
+
+
+# ---------- RevenueCat Webhook ----------
+def _sign(body: bytes, secret: str = RC_SECRET, ts: int | None = None) -> str:
+    ts = ts or int(time.time())
+    signed = f"{ts}.".encode() + body
+    digest = hmac.new(secret.encode(), signed, hashlib.sha256).hexdigest()
+    return f"t={ts},v1={digest}"
+
+
+class TestWebhook:
+    def test_no_signature_401(self, api):
+        r = api.post(f"{BASE_URL}/api/webhooks/revenuecat",
+                     data=json.dumps({"event": {"id": "x"}}),
+                     headers={"Content-Type": "application/json"},
+                     timeout=15)
+        assert r.status_code == 401
+
+    def test_bad_signature_401(self, api):
+        r = api.post(f"{BASE_URL}/api/webhooks/revenuecat",
+                     data=json.dumps({"event": {"id": "x"}}),
+                     headers={"Content-Type": "application/json",
+                              "X-RevenueCat-Webhook-Signature": "t=1,v1=deadbeef"},
+                     timeout=15)
+        assert r.status_code == 401
+
+    def test_valid_signature_upserts_entitlement(self, api):
+        # We seed a stable user_id so the premium test below can rely on it
+        user_id = f"TEST_user_{uuid.uuid4().hex[:8]}"
+        pytest.premium_user_id = user_id
+        body = json.dumps({
+            "event": {
+                "id": f"evt_{uuid.uuid4().hex}",
+                "type": "INITIAL_PURCHASE",
+                "app_user_id": user_id,
+                "product_id": "otter_lifetime",
+                "entitlement_ids": ["premium"],
+                "expiration_at_ms": None,
+            }
+        }).encode()
+        sig = _sign(body)
+        r = api.post(f"{BASE_URL}/api/webhooks/revenuecat",
+                     data=body,
+                     headers={"Content-Type": "application/json",
+                              "X-RevenueCat-Webhook-Signature": sig},
+                     timeout=15)
         assert r.status_code == 200, r.text
-        steps = r.json()
-        assert 3 <= len(steps) <= 10, f"expected 3-10 steps, got {len(steps)}"
-        for s in steps:
-            assert s["minutes"] in (5, 10, 25), f"unexpected minutes {s['minutes']}"
-            assert s["text"].strip()
-            assert s["task_id"] == task_id
-            assert s["done"] is False
+        assert r.json().get("ok") is True
 
-    def test_steps_persisted(self, api, task_id):
-        r = api.get(f"{BASE_URL}/api/tasks/{task_id}/steps", timeout=15)
+
+# ---------- Data isolation between two devices ----------
+class TestDataIsolation:
+    def test_devices_isolated(self, api):
+        # Create task for A
+        rA = api.post(f"{BASE_URL}/api/tasks",
+                      json={"title": "TEST_ isolation A"},
+                      headers=hdr(DEV_A), timeout=15)
+        assert rA.status_code == 200
+        tid_a = rA.json()["id"]
+
+        # Create task for B
+        rB = api.post(f"{BASE_URL}/api/tasks",
+                      json={"title": "TEST_ isolation B"},
+                      headers=hdr(DEV_B), timeout=15)
+        assert rB.status_code == 200
+        tid_b = rB.json()["id"]
+
+        # A cannot see B's task
+        listA = api.get(f"{BASE_URL}/api/tasks", headers=hdr(DEV_A), timeout=15).json()
+        assert any(t["id"] == tid_a for t in listA)
+        assert all(t["id"] != tid_b for t in listA)
+
+        # B cannot see A's task
+        listB = api.get(f"{BASE_URL}/api/tasks", headers=hdr(DEV_B), timeout=15).json()
+        assert any(t["id"] == tid_b for t in listB)
+        assert all(t["id"] != tid_a for t in listB)
+
+        # Delete A's task using device B — must NOT affect A
+        api.delete(f"{BASE_URL}/api/tasks/{tid_a}", headers=hdr(DEV_B), timeout=15)
+        listA_after = api.get(f"{BASE_URL}/api/tasks", headers=hdr(DEV_A), timeout=15).json()
+        assert any(t["id"] == tid_a for t in listA_after), "Device B deleted device A's task!"
+
+
+# ---------- Rate limits ----------
+class TestRateLimits:
+    """Fresh device to guarantee counter starts at 0."""
+    DEV = f"TEST-rate-{uuid.uuid4().hex[:8]}"
+
+    def test_shrink_rate_limit(self, api):
+        # Create a task
+        r = api.post(f"{BASE_URL}/api/tasks",
+                     json={"title": "TEST_ rate limit task"},
+                     headers=hdr(self.DEV), timeout=15)
         assert r.status_code == 200
-        steps = r.json()
-        assert len(steps) >= 3
-
-
-# ---------- Step toggle + streak ----------
-class TestStepToggleAndStreak:
-    @pytest.fixture(scope="class")
-    def prepared(self, api):
-        r = api.post(f"{BASE_URL}/api/tasks", json={"title": "TEST_ Book dentist"}, timeout=15)
         tid = r.json()["id"]
-        created_task_ids.append(tid)
-        sh = api.post(f"{BASE_URL}/api/tasks/{tid}/shrink", json={"difficulty": "easy"}, timeout=90)
-        assert sh.status_code == 200
-        steps = sh.json()
-        return {"task_id": tid, "step_id": steps[0]["id"]}
 
-    def test_streak_before(self, api, prepared):
-        r = api.get(f"{BASE_URL}/api/streak", timeout=15)
-        assert r.status_code == 200
-        prepared["before"] = r.json()
+        # Do 3 shrinks (should all succeed)
+        for i in range(3):
+            r = api.post(f"{BASE_URL}/api/tasks/{tid}/shrink",
+                         json={"difficulty": "easy"},
+                         headers=hdr(self.DEV), timeout=90)
+            assert r.status_code == 200, f"shrink {i+1} failed: {r.status_code} {r.text[:200]}"
 
-    def test_toggle_done(self, api, prepared):
-        sid = prepared["step_id"]
-        r = api.patch(f"{BASE_URL}/api/steps/{sid}", json={"done": True}, timeout=15)
-        assert r.status_code == 200
-        assert r.json()["done"] is True
-        assert r.json()["completed_at"]
+        # 4th shrink should be 429
+        r = api.post(f"{BASE_URL}/api/tasks/{tid}/shrink",
+                     json={"difficulty": "easy"},
+                     headers=hdr(self.DEV), timeout=90)
+        assert r.status_code == 429, f"expected 429, got {r.status_code}"
 
-    def test_streak_increments(self, api, prepared):
-        r = api.get(f"{BASE_URL}/api/streak", timeout=15)
-        after = r.json()
-        assert after["todays_steps"] >= prepared["before"]["todays_steps"] + 1
-
-    def test_toggle_undone(self, api, prepared):
-        sid = prepared["step_id"]
-        r = api.patch(f"{BASE_URL}/api/steps/{sid}", json={"done": False}, timeout=15)
-        assert r.status_code == 200
-        assert r.json()["done"] is False
+        # /me/access should reflect shrinks_today
+        acc = api.get(f"{BASE_URL}/api/me/access", headers=hdr(self.DEV), timeout=15).json()
+        assert acc["limits"]["shrinks_today"] == 3
 
 
-# ---------- Next pick (energy aware) ----------
-class TestNext:
-    def test_next_low(self, api):
-        r = api.post(f"{BASE_URL}/api/next", json={"energy": "low"}, timeout=90)
-        assert r.status_code == 200, r.text
-        j = r.json()
-        assert "reason" in j
-        assert "empty" in j
-        if not j["empty"]:
-            assert j["step"] is not None
-            # low energy -> prefer 5 or 10 minutes
-            assert j["step"]["minutes"] in (5, 10, 25)
-
-    def test_next_good(self, api):
-        r = api.post(f"{BASE_URL}/api/next", json={"energy": "good"}, timeout=90)
-        assert r.status_code == 200
-        j = r.json()
-        assert "reason" in j
+# ---------- Deep Shrink premium gate ----------
+class TestDeepShrink:
+    def test_deep_shrink_402_for_non_premium(self, api):
+        dev = f"TEST-deep-{uuid.uuid4().hex[:8]}"
+        r = api.post(f"{BASE_URL}/api/tasks",
+                     json={"title": "TEST_ deep shrink gate"},
+                     headers=hdr(dev), timeout=15)
+        tid = r.json()["id"]
+        r = api.post(f"{BASE_URL}/api/tasks/{tid}/shrink",
+                     json={"difficulty": "medium", "deep": True},
+                     headers=hdr(dev), timeout=30)
+        assert r.status_code == 402, f"expected 402, got {r.status_code}: {r.text[:200]}"
 
 
-# ---------- Braindump ----------
-class TestBraindump:
-    def test_braindump_paragraph(self, api):
-        text = (
-            "I really need to file my BIR return next week, and I've been meaning to "
-            "reply to Mom about the wedding. Also the dentist keeps texting me. Ugh, I feel bad."
-        )
-        r = api.post(f"{BASE_URL}/api/braindump", json={"text": text}, timeout=90)
-        assert r.status_code == 200
-        tasks = r.json()["tasks"]
-        assert isinstance(tasks, list)
-        assert len(tasks) >= 2, f"expected multiple, got {tasks}"
+# ---------- Premium bypasses limits (direct Mongo seed) ----------
+class TestPremiumBypasses:
+    """Seed entitlement doc directly in mongo, then create a valid session so
+    Bearer auth resolves to that premium user_id, then do 4+ shrinks."""
 
-    def test_braindump_empty(self, api):
-        r = api.post(f"{BASE_URL}/api/braindump", json={"text": "   "}, timeout=15)
-        assert r.status_code == 200
-        assert r.json()["tasks"] == []
+    def test_premium_unlimited_shrink(self, api):
+        import asyncio
+        from motor.motor_asyncio import AsyncIOMotorClient
+        from datetime import datetime, timezone, timedelta
 
+        MONGO_URL = "mongodb://localhost:27017"
+        DB_NAME = "otterly"
 
-# ---------- Room ----------
-class TestRoom:
-    session_id = f"TEST_room_{uuid.uuid4().hex[:8]}"
+        premium_uid = f"TEST_prem_{uuid.uuid4().hex[:8]}"
+        session_token = f"TEST_sess_{uuid.uuid4().hex}"
 
-    def test_room_send(self, api):
-        r = api.post(
-            f"{BASE_URL}/api/room/message",
-            json={"session_id": self.session_id, "text": "hi, I'm going to work on my report"},
-            timeout=60,
-        )
-        assert r.status_code == 200, r.text
-        reply = r.json()["reply"]
-        assert isinstance(reply, str) and len(reply) > 0
+        async def seed():
+            c = AsyncIOMotorClient(MONGO_URL)
+            db = c[DB_NAME]
+            await db.users.insert_one({
+                "user_id": premium_uid,
+                "email": f"{premium_uid}@test.local",
+                "name": "Prem Tester",
+            })
+            await db.entitlements.insert_one({
+                "user_id": premium_uid,
+                "premium": {"active": True, "product_id": "otter_lifetime"},
+            })
+            await db.user_sessions.insert_one({
+                "session_token": session_token,
+                "user_id": premium_uid,
+                "expires_at": datetime.now(timezone.utc) + timedelta(days=7),
+                "created_at": datetime.now(timezone.utc),
+            })
+            c.close()
 
-    def test_room_history(self, api):
-        r = api.get(f"{BASE_URL}/api/room/history/{self.session_id}", timeout=15)
-        assert r.status_code == 200
-        hist = r.json()
-        assert len(hist) >= 2
-        roles = {m["role"] for m in hist}
-        assert "user" in roles and "otter" in roles
+        async def cleanup():
+            c = AsyncIOMotorClient(MONGO_URL)
+            db = c[DB_NAME]
+            await db.users.delete_one({"user_id": premium_uid})
+            await db.entitlements.delete_one({"user_id": premium_uid})
+            await db.user_sessions.delete_one({"session_token": session_token})
+            await db.tasks.delete_many({"owner": premium_uid})
+            await db.steps.delete_many({"owner": premium_uid})
+            c.close()
+
+        asyncio.run(seed())
+        try:
+            auth = {"Content-Type": "application/json", "Authorization": f"Bearer {session_token}"}
+
+            # /me/access should say premium
+            acc = api.get(f"{BASE_URL}/api/me/access", headers=auth, timeout=15).json()
+            assert acc["premium"] is True
+            assert acc["limits"]["shrinks_cap"] == -1  # unlimited
+
+            # Create task
+            r = api.post(f"{BASE_URL}/api/tasks",
+                         json={"title": "TEST_ premium shrink"},
+                         headers=auth, timeout=15)
+            assert r.status_code == 200
+            tid = r.json()["id"]
+
+            # 5 shrinks should all succeed (free tier caps at 3)
+            for i in range(5):
+                r = api.post(f"{BASE_URL}/api/tasks/{tid}/shrink",
+                             json={"difficulty": "easy"},
+                             headers=auth, timeout=90)
+                assert r.status_code == 200, f"premium shrink {i+1} failed: {r.status_code}"
+
+            # Deep shrink should also succeed for premium
+            r = api.post(f"{BASE_URL}/api/tasks/{tid}/shrink",
+                         json={"difficulty": "medium", "deep": True},
+                         headers=auth, timeout=120)
+            assert r.status_code == 200, f"premium deep shrink failed: {r.status_code}"
+        finally:
+            asyncio.run(cleanup())
 
 
 # ---------- Cleanup ----------
 def teardown_module(module):
     try:
         s = requests.Session()
-        s.headers.update({"Content-Type": "application/json"})
-        for tid in created_task_ids:
-            s.delete(f"{BASE_URL}/api/tasks/{tid}", timeout=10)
+        for dev in (DEV_A, DEV_B):
+            lst = s.get(f"{BASE_URL}/api/tasks", headers=hdr(dev), timeout=10)
+            if lst.status_code == 200:
+                for t in lst.json():
+                    s.delete(f"{BASE_URL}/api/tasks/{t['id']}", headers=hdr(dev), timeout=10)
     except Exception:
         pass

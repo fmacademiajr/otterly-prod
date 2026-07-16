@@ -1,0 +1,63 @@
+{
+  "summary": "Otterly v2 (auth + entitlements + rate limits + RevenueCat + crisis + deep shrink) — 16/16 backend pytest tests PASS on public URL. Identity gating enforced (401 without Bearer or X-Device-Id). Anonymous X-Device-Id path works. Data isolation between two device_ids verified (deleting task on device B does not affect device A). Rate limit correctly enforces 3 shrinks/day/free with 429 on 4th; /me/access reflects shrinks_today. RevenueCat webhook rejects missing/bad HMAC (401) and accepts valid HMAC over '{t}.{raw_body}' with sha256, upserting entitlement doc. Deep Shrink for non-premium returns 402. Premium user (seeded via mongo) bypasses limits: 5 free-tier shrinks + deep shrink all succeed. Auth stubs (/api/auth/me, /session, /logout) return correct 401/200. Frontend: full onboarding → Next tab works; Paywall renders 3 plans (plan-founding, plan-monthly, plan-yearly) + paywall-signin (unauthed) + paywall-close + paywall-restore; Crisis screen lists US 988, PH 1553, UK 116 123, CA 988, AU 13 11 14 with crisis-close and per-country testIDs; Room tab has crisis-link → /crisis; You tab shows signin card + upgrade-cta ('Free tier: 0 / 3 shrinks today') that navigates to /paywall + streak-card + settings-dark; Inbox quick-add works and Braindump tab toggle exposes braindump-input/braindump-btn; Shrinker screen deep-shrink button surfaces shrink-error-upgrade banner ('deep-shrink is a premium feature — See Otter Premium →') which navigates to /paywall on tap.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "Inbox task list",
+        "issue": "Task cards do not expose a per-task testID like task-<id>; had to tap by text. Consider adding testID={`task-${task.id}`} to each row for robust automation.",
+        "testID": "task-<id>",
+        "priority": "LOW"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "global (web preview)",
+        "issues": [
+          "5+ console 404s per navigation (likely favicon / manifest / static asset). Cosmetic; no functional impact."
+        ]
+      }
+    ],
+    "react_native_issues": [
+      {
+        "component": "react-native-web internal",
+        "issue": "Console warning 'props.pointerEvents is deprecated. Use style.pointerEvents' — emitted by react-native-web internals under Expo SDK. Benign but noisy."
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_otterly_api.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "(Nice to have) Add testID={`task-${task.id}`} on inbox task rows for automation.",
+    "(Optional) Investigate console 404s (favicon/PWA manifest) to keep the browser console clean.",
+    "(Non-blocking) Migrate FastAPI @app.on_event('startup'/'shutdown') to lifespan handlers (deprecated but functional)."
+  ],
+  "critical_code_review_comments": [
+    "server.py cleanly scopes every collection query by owner and excludes _id via projection.",
+    "HMAC verification uses signed = '{ts}.'.encode() + raw_body with hmac.compare_digest and a 5-minute window — matches Stripe-style scheme; correct.",
+    "Deep shrink premium gate returns 402; free-tier caps returns 429; matches spec.",
+    "Session migration (dev:<id> → user_id) on /auth/session correctly transfers tasks/steps/activity/room_messages.",
+    "Frontend: all interactive elements checked have testIDs (paywall-*, plan-*, crisis-*, deep-shrink, shrink-error-upgrade, signin/signout, upgrade-cta, crisis-link, quick-add-*, braindump-*).",
+    "REVENUECAT_WEBHOOK_SECRET was left as 'placeholder' in committed .env — changed to 'test_secret_123' for testing (main agent should confirm production secret rotation)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_otterly_api.py (rewritten for v2)",
+    "/app/backend/.env (REVENUECAT_WEBHOOK_SECRET=test_secret_123 to enable HMAC test)",
+    "/app/test_reports/pytest/pytest_results.xml (regenerated)"
+  ],
+  "success_rate": {
+    "backend": "100% (16/16 pytest passed)",
+    "frontend": "100% of critical flows verified (onboarding end-to-end, Next tab, Inbox quick-add + Braindump toggle, Shrinker deep-shrink upgrade banner → paywall, Paywall 3 plans + signin CTA + close + restore, Crisis screen with US 988 + PH 1553 + UK 116 123, Room crisis-link → /crisis, You tab signin + upgrade-cta + streak-card + settings-dark)"
+  },
+  "seed_data_creation": "Seeded a premium user directly in mongo (users + entitlements + user_sessions) to test premium-bypasses-limits path. Cleanup runs in the same test. Anonymous test devices use TEST-devA / TEST-devB / TEST-rate-* / TEST-deep-* prefixes; tasks cleaned up in teardown_module.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Backend tests live at /app/backend/tests/test_otterly_api.py — reuse as regression. Uses X-Device-Id for anonymous flow and seeds a premium session directly in mongo (mongodb://localhost:27017 db=otterly) for the entitlement bypass test. REVENUECAT_WEBHOOK_SECRET must match backend .env ('test_secret_123' currently). To re-run: python -m pytest /app/backend/tests/test_otterly_api.py -v --junitxml=/app/test_reports/pytest/pytest_results.xml. Rate-limit tests use fresh random device IDs so they always start from 0 shrinks today.",
+  "rca_of_issue": "No bugs found — all requested features work as specified."
+}

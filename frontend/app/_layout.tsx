@@ -8,9 +8,19 @@ import { StatusBar } from "expo-status-bar";
 import { useIconFonts } from "@/src/hooks/use-icon-fonts";
 import { useOtterFonts } from "@/src/hooks/use-otter-fonts";
 import { ThemeProvider, useTheme } from "@/src/theme/ThemeProvider";
+import { AuthProvider, useAuth } from "@/src/auth/AuthProvider";
+import { revenuecat } from "@/src/lib/revenuecat";
 
 LogBox.ignoreAllLogs(true);
 SplashScreen.preventAutoHideAsync();
+
+function RevenueCatBootstrap() {
+  const { user } = useAuth();
+  useEffect(() => {
+    revenuecat.initRevenueCat(user?.user_id);
+  }, [user?.user_id]);
+  return null;
+}
 
 function ThemedStack() {
   const { colors, isDark } = useTheme();
@@ -24,6 +34,7 @@ function ThemedStack() {
           animation: "fade",
         }}
       />
+      <RevenueCatBootstrap />
     </View>
   );
 }
@@ -43,7 +54,9 @@ export default function RootLayout() {
   return (
     <SafeAreaProvider>
       <ThemeProvider>
-        <ThemedStack />
+        <AuthProvider>
+          <ThemedStack />
+        </AuthProvider>
       </ThemeProvider>
     </SafeAreaProvider>
   );

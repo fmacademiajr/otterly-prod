@@ -15,7 +15,7 @@ import { useFocusEffect, useRouter } from "expo-router";
 import { Plus, Trash2, Sparkles } from "lucide-react-native";
 
 import { OtterButton, SoftExit } from "@/src/components/OtterButton";
-import { api, type Task } from "@/src/lib/api";
+import { api, ApiError, type Task } from "@/src/lib/api";
 import { useTheme } from "@/src/theme/ThemeProvider";
 import { fonts, radii, spacing } from "@/src/theme/tokens";
 
@@ -68,8 +68,12 @@ export default function InboxScreen() {
       }
       setText("");
       load();
-    } catch {
-      setError("Braindump failed. Try again.");
+    } catch (e: any) {
+      if (e instanceof ApiError && e.status === 429) {
+        setError(e.detail);
+      } else {
+        setError("Braindump failed. Try again.");
+      }
     } finally {
       setDumping(false);
     }

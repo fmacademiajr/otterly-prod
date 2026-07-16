@@ -9,23 +9,29 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useFocusEffect } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
+import { LogOut, Sparkles, ChevronRight } from "lucide-react-native";
 import { StreakRipple } from "@/src/components/motifs";
-import { api, type StreakStats } from "@/src/lib/api";
+import { api, type StreakStats, type AccessSnapshot } from "@/src/lib/api";
 import { useTheme } from "@/src/theme/ThemeProvider";
 import { fonts, radii, spacing } from "@/src/theme/tokens";
 import { storage } from "@/src/utils/storage";
+import { useAuth } from "@/src/auth/AuthProvider";
 
 export default function YouScreen() {
   const { colors, isDark, mode, setMode } = useTheme();
+  const router = useRouter();
+  const { user, status, signIn, signOut } = useAuth();
   const [stats, setStats] = useState<StreakStats | null>(null);
+  const [access, setAccess] = useState<AccessSnapshot | null>(null);
   const [name, setName] = useState("");
   const [reminder, setReminder] = useState("20:00");
 
   const load = useCallback(async () => {
     try {
-      const s = await api.streak();
+      const [s, a] = await Promise.all([api.streak(), api.access()]);
       setStats(s);
+      setAccess(a);
     } catch {}
     const n = await storage.getItem<string>("otterly.userName", "");
     if (n) setName(n);
@@ -89,6 +95,63 @@ export default function YouScreen() {
             {stats?.todays_steps ?? 0} step{stats?.todays_steps === 1 ? "" : "s"} today
           </Text>
         </View>
+
+        <Text style={[styles.section, { color: colors.textSubtle, fontFamily: fonts.body }]}>
+          account
+        </Text>
+
+        {status === "authed" && user ? (
+          <View style={[styles.accountCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <Text style={{ color: colors.text, fontFamily: fonts.bodySemibold, fontSize: 15 }}>
+              {user.name}
+            </Text>
+            <Text style={{ color: colors.textMuted, fontFamily: fonts.body, fontSize: 13, marginTop: 2 }}>
+              {user.email}
+            </Text>
+            <View style={{ height: spacing.sm }} />
+            <TouchableOpacity testID="signout" onPress={signOut} style={{ flexDirection: "row", alignItems: "center" }}>
+              <LogOut size={14} color={colors.textSubtle} strokeWidth={1.5} />
+              <Text style={{ color: colors.textSubtle, fontFamily: fonts.body, fontSize: 13, marginLeft: 6 }}>
+                Sign out
+              </Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <TouchableOpacity
+            testID="signin"
+            onPress={signIn}
+            style={[styles.accountCard, { backgroundColor: colors.surface, borderColor: colors.border }]}
+          >
+            <Text style={{ color: colors.text, fontFamily: fonts.bodySemibold, fontSize: 15 }}>
+              Sign in with Google
+            </Text>
+            <Text style={{ color: colors.textMuted, fontFamily: fonts.body, fontSize: 13, marginTop: 2 }}>
+              Sync across devices. Required to purchase.
+            </Text>
+          </TouchableOpacity>
+        )}
+
+        <TouchableOpacity
+          testID="upgrade-cta"
+          onPress={() => router.push("/paywall")}
+          style={[
+            styles.upgradeCard,
+            { backgroundColor: access?.premium ? colors.primarySurface : colors.surface, borderColor: access?.premium ? colors.primary : colors.border },
+          ]}
+        >
+          <Sparkles size={16} color={access?.premium ? colors.primary : colors.accent} strokeWidth={1.6} />
+          <View style={{ flex: 1, marginLeft: spacing.md }}>
+            <Text style={{ color: colors.text, fontFamily: fonts.bodySemibold, fontSize: 15 }}>
+              {access?.premium ? "Otter Premium — active" : "Otter Premium"}
+            </Text>
+            <Text style={{ color: colors.textMuted, fontFamily: fonts.body, fontSize: 13, marginTop: 2 }}>
+              {access?.premium
+                ? `You're supporting Otterly. Thanks.`
+                : `Free tier: ${access?.limits?.shrinks_today ?? 0} / ${access?.limits?.shrinks_cap ?? 3} shrinks today.`}
+            </Text>
+          </View>
+          <ChevronRight size={18} color={colors.textSubtle} strokeWidth={1.4} />
+        </TouchableOpacity>
 
         <Text style={[styles.section, { color: colors.textSubtle, fontFamily: fonts.body }]}>
           settings
@@ -193,4 +256,18 @@ const styles = StyleSheet.create({
   },
   rowLabel: { fontSize: 14 },
   rowInput: { fontSize: 15, textAlign: "right", flex: 1, marginLeft: spacing.base },
+  accountCard: {
+    borderWidth: 1,
+    borderRadius: radii.lg,
+    padding: spacing.base,
+    marginBottom: spacing.md,
+  },
+  upgradeCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderWidth: 1,
+    borderRadius: radii.lg,
+    padding: spacing.base,
+    marginBottom: spacing.md,
+  },
 });

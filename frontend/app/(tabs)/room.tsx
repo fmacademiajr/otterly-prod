@@ -11,7 +11,8 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Send } from "lucide-react-native";
+import { useRouter } from "expo-router";
+import { Send, LifeBuoy } from "lucide-react-native";
 
 import { WaterWave } from "@/src/components/motifs";
 import { api, type RoomMessage } from "@/src/lib/api";
@@ -27,6 +28,7 @@ function newSessionId() {
 
 export default function RoomScreen() {
   const { colors } = useTheme();
+  const router = useRouter();
   const [sessionId, setSessionId] = useState<string>("");
   const [messages, setMessages] = useState<RoomMessage[]>([]);
   const [text, setText] = useState("");
@@ -147,6 +149,17 @@ export default function RoomScreen() {
           </TouchableOpacity>
         </View>
 
+        <TouchableOpacity
+          testID="crisis-link"
+          onPress={() => router.push("/crisis")}
+          style={[styles.crisisLink, { borderColor: colors.border }]}
+        >
+          <LifeBuoy size={13} color={colors.textSubtle} strokeWidth={1.6} />
+          <Text style={{ color: colors.textSubtle, fontFamily: fonts.body, fontSize: 12, marginLeft: 6 }}>
+            If you're in crisis
+          </Text>
+        </TouchableOpacity>
+
         <View style={styles.waveWrap}>
           <WaterWave width={220} color={colors.border} />
         </View>
@@ -262,5 +275,16 @@ const styles = StyleSheet.create({
     borderRadius: radii.lg,
     alignItems: "center",
     justifyContent: "center",
+  },
+  crisisLink: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: spacing.md,
+    paddingVertical: 6,
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    alignSelf: "flex-start",
+    marginHorizontal: spacing.lg,
+    marginTop: spacing.md,
   },
 });

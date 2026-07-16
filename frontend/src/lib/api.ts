@@ -1,11 +1,8 @@
-// Otterly backend client — hits /api/* on EXPO_PUBLIC_BACKEND_URL.
+// Otterly backend client — sends Bearer token when signed in, else X-Device-Id.
+
+import { identity } from "./identity";
 
 const BASE = process.env.EXPO_PUBLIC_BACKEND_URL;
-
-if (!BASE) {
-  // eslint-disable-next-line no-console
-  console.warn("EXPO_PUBLIC_BACKEND_URL not set");
-}
 
 export type Task = {
   id: string;
@@ -49,17 +46,59 @@ export type RoomMessage = {
   created_at: string;
 };
 
+export type AccessSnapshot = {
+  premium: boolean;
+  plan: string;
+  limits: {
+    shrinks_today: number;
+    shrinks_cap: number;
+    braindumps_today: number;
+    braindumps_cap: number;
+    room_today: number;
+    room_cap: number;
+  };
+};
+
+export type StoredUser = {
+  user_id: string;
+  email: string;
+  name: string;
+  picture?: string | null;
+};
+
+async function buildHeaders(): Promise<Record<string, string>> {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+  const token = await identity.getToken();
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  } else {
+    const deviceId = await identity.getDeviceId();
+    headers["X-Device-Id"] = deviceId;
+  }
+  return headers;
+}
+
+export class ApiError extends Error {
+  constructor(public status: number, public detail: string) {
+    super(detail);
+  }
+}
+
 async function req<T>(path: string, opts: RequestInit = {}): Promise<T> {
+  const headers = await buildHeaders();
   const res = await fetch(`${BASE}${path}`, {
     ...opts,
-    headers: {
-      "Content-Type": "application/json",
-      ...(opts.headers || {}),
-    },
+    headers: { ...headers, ...(opts.headers || {}) },
   });
   if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`${res.status}: ${body}`);
+    let detail = res.statusText;
+    try {
+      const j = await res.json();
+      detail = typeof j?.detail === "string" ? j.detail : JSON.stringify(j?.detail || j);
+    } catch {}
+    throw new ApiError(res.status, detail);
   }
   return (await res.json()) as T;
 }
@@ -67,46 +106,40 @@ async function req<T>(path: string, opts: RequestInit = {}): Promise<T> {
 export const api = {
   listTasks: () => req<Task[]>("/api/tasks"),
   createTask: (title: string, note?: string) =>
-    req<Task>("/api/tasks", {
-      method: "POST",
-      body: JSON.stringify({ title, note }),
-    }),
+    req<Task>("/api/tasks", { method: "POST", body: JSON.stringify({ title, note }) }),
   deleteTask: (id: string) =>
     req<{ ok: boolean }>(`/api/tasks/${id}`, { method: "DELETE" }),
-
   listSteps: (taskId: string) => req<Step[]>(`/api/tasks/${taskId}/steps`),
-  shrinkTask: (taskId: string, difficulty: "easy" | "medium" | "hard") =>
+  shrinkTask: (
+    taskId: string,
+    difficulty: "easy" | "medium" | "hard",
+    deep = false
+  ) =>
     req<Step[]>(`/api/tasks/${taskId}/shrink`, {
       method: "POST",
-      body: JSON.stringify({ difficulty }),
+      body: JSON.stringify({ difficulty, deep }),
     }),
-
   toggleStep: (stepId: string, done: boolean) =>
-    req<Step>(`/api/steps/${stepId}`, {
-      method: "PATCH",
-      body: JSON.stringify({ done }),
-    }),
-
+    req<Step>(`/api/steps/${stepId}`, { method: "PATCH", body: JSON.stringify({ done }) }),
   next: (energy: Energy, minutes?: number) =>
-    req<NextResponse>("/api/next", {
-      method: "POST",
-      body: JSON.stringify({ energy, minutes }),
-    }),
-
+    req<NextResponse>("/api/next", { method: "POST", body: JSON.stringify({ energy, minutes }) }),
   braindump: (text: string) =>
-    req<{ tasks: string[] }>("/api/braindump", {
-      method: "POST",
-      body: JSON.stringify({ text }),
-    }),
-
+    req<{ tasks: string[] }>("/api/braindump", { method: "POST", body: JSON.stringify({ text }) }),
   roomSend: (session_id: string, text: string, goal?: string) =>
     req<{ reply: string }>("/api/room/message", {
       method: "POST",
       body: JSON.stringify({ session_id, text, goal }),
     }),
-
-  roomHistory: (session_id: string) =>
-    req<RoomMessage[]>(`/api/room/history/${session_id}`),
-
+  roomHistory: (session_id: string) => req<RoomMessage[]>(`/api/room/history/${session_id}`),
   streak: () => req<StreakStats>("/api/streak"),
+  access: () => req<AccessSnapshot>("/api/me/access"),
+
+  // Auth
+  exchangeSession: (session_token: string, device_id?: string) =>
+    req<StoredUser & { session_token: string; expires_at: string }>("/api/auth/session", {
+      method: "POST",
+      body: JSON.stringify({ session_token, device_id }),
+    }),
+  me: () => req<StoredUser>("/api/auth/me"),
+  logout: () => req<{ ok: boolean }>("/api/auth/logout", { method: "POST" }),
 };

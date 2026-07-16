@@ -1,0 +1,153 @@
+import React, { createContext, useCallback, useContext, useEffect, useState } from "react";
+import { Platform } from "react-native";
+import * as WebBrowser from "expo-web-browser";
+import * as Linking from "expo-linking";
+
+import { identity, type StoredUser } from "@/src/lib/identity";
+import { api, ApiError } from "@/src/lib/api";
+
+type AuthCtx = {
+  status: "loading" | "authed" | "anonymous";
+  user: StoredUser | null;
+  signIn: () => Promise<void>;
+  signOut: () => Promise<void>;
+  refresh: () => Promise<void>;
+};
+
+const AuthContext = createContext<AuthCtx | null>(null);
+
+const EMERGENT_AUTH_URL = "https://auth.emergentagent.com/";
+
+async function processSessionToken(sessionToken: string) {
+  const deviceId = await identity.getDeviceId();
+  const res = await api.exchangeSession(sessionToken, deviceId);
+  await identity.setToken(res.session_token);
+  await identity.setUser({
+    user_id: res.user_id,
+    email: res.email,
+    name: res.name,
+    picture: res.picture,
+  });
+  return res;
+}
+
+function extractSessionIdFromUrl(url: string | null | undefined): string | null {
+  if (!url) return null;
+  try {
+    // Support hash (#session_id=...) and query (?session_id=...)
+    const hashIdx = url.indexOf("#");
+    if (hashIdx >= 0) {
+      const params = new URLSearchParams(url.substring(hashIdx + 1));
+      const s = params.get("session_id");
+      if (s) return s;
+    }
+    const qIdx = url.indexOf("?");
+    if (qIdx >= 0) {
+      const params = new URLSearchParams(url.substring(qIdx + 1));
+      const s = params.get("session_id");
+      if (s) return s;
+    }
+  } catch {}
+  return null;
+}
+
+export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const [status, setStatus] = useState<"loading" | "authed" | "anonymous">("loading");
+  const [user, setUser] = useState<StoredUser | null>(null);
+
+  const bootstrap = useCallback(async () => {
+    // On web, process a redirect-embedded session_id first.
+    if (Platform.OS === "web" && typeof window !== "undefined") {
+      const sid = extractSessionIdFromUrl(window.location.href);
+      if (sid) {
+        try {
+          const res = await processSessionToken(sid);
+          setUser({
+            user_id: res.user_id,
+            email: res.email,
+            name: res.name,
+            picture: res.picture,
+          });
+          window.history.replaceState(null, "", window.location.pathname);
+          setStatus("authed");
+          return;
+        } catch (e) {
+          // fall through to existing token check
+        }
+      }
+    }
+
+    // Existing token check
+    const token = await identity.getToken();
+    if (token) {
+      try {
+        const me = await api.me();
+        await identity.setUser(me);
+        setUser(me);
+        setStatus("authed");
+        return;
+      } catch (e) {
+        if (e instanceof ApiError && e.status === 401) {
+          await identity.clearToken();
+        }
+      }
+    }
+
+    // Anonymous
+    const stored = await identity.getUser();
+    setUser(stored || null);
+    setStatus("anonymous");
+  }, []);
+
+  useEffect(() => {
+    bootstrap();
+  }, [bootstrap]);
+
+  const signIn = useCallback(async () => {
+    if (Platform.OS === "web") {
+      if (typeof window === "undefined") return;
+      const redirectUrl = window.location.origin + "/";
+      window.location.href = `${EMERGENT_AUTH_URL}?redirect=${encodeURIComponent(redirectUrl)}`;
+      return;
+    }
+
+    const redirectUrl = Linking.createURL("");
+    const authUrl = `${EMERGENT_AUTH_URL}?redirect=${encodeURIComponent(redirectUrl)}`;
+    const result = await WebBrowser.openAuthSessionAsync(authUrl, redirectUrl);
+    if (result.type !== "success" || !result.url) return;
+    const sid = extractSessionIdFromUrl(result.url);
+    if (!sid) return;
+    const res = await processSessionToken(sid);
+    setUser({
+      user_id: res.user_id,
+      email: res.email,
+      name: res.name,
+      picture: res.picture,
+    });
+    setStatus("authed");
+  }, []);
+
+  const signOut = useCallback(async () => {
+    try {
+      await api.logout();
+    } catch {}
+    await identity.clearToken();
+    await identity.clearUser();
+    setUser(null);
+    setStatus("anonymous");
+  }, []);
+
+  return (
+    <AuthContext.Provider
+      value={{ status, user, signIn, signOut, refresh: bootstrap }}
+    >
+      {children}
+    </AuthContext.Provider>
+  );
+}
+
+export function useAuth(): AuthCtx {
+  const ctx = useContext(AuthContext);
+  if (!ctx) throw new Error("useAuth must be used inside AuthProvider");
+  return ctx;
+}
