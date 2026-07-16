@@ -26,6 +26,7 @@ export default function YouScreen() {
   const [access, setAccess] = useState<AccessSnapshot | null>(null);
   const [name, setName] = useState("");
   const [reminder, setReminder] = useState("20:00");
+  const [loadedFromStorage, setLoadedFromStorage] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -37,6 +38,7 @@ export default function YouScreen() {
     if (n) setName(n);
     const r = await storage.getItem<string>("otterly.reminderTime", "20:00");
     if (r) setReminder(r);
+    setLoadedFromStorage(true);
   }, []);
 
   useFocusEffect(
@@ -46,11 +48,11 @@ export default function YouScreen() {
   );
 
   useEffect(() => {
-    storage.setItem("otterly.userName", name);
-  }, [name]);
+    if (loadedFromStorage) storage.setItem("otterly.userName", name);
+  }, [name, loadedFromStorage]);
   useEffect(() => {
-    storage.setItem("otterly.reminderTime", reminder);
-  }, [reminder]);
+    if (loadedFromStorage) storage.setItem("otterly.reminderTime", reminder);
+  }, [reminder, loadedFromStorage]);
 
   const days = stats?.days_this_week ?? 0;
   const streakLine =
