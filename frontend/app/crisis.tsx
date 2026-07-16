@@ -39,7 +39,7 @@ export default function CrisisScreen() {
         </View>
 
         <View style={styles.center}>
-          <OtterMascot size={110} variant="line" color={CRISIS_OTTER} />
+          <OtterMascot size={110} variant="default" />
           <View style={{ height: spacing.lg }} />
           <Text style={[styles.title, { color: colors.text, fontFamily: fonts.displayBold }]}>
             Please reach a real person.

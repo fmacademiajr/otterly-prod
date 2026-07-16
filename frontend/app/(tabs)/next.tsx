@@ -111,7 +111,7 @@ export default function NextScreen() {
               Hello,{name ? "\n" + name : ""}
             </Text>
           </View>
-          <OtterMascot size={80} variant="line-peek" color={colors.textSubtle} />
+          <OtterMascot size={90} variant="peek" />
         </View>
 
         <View style={{ height: spacing.md }} />

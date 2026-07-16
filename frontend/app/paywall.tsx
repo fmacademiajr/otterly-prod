@@ -167,7 +167,7 @@ export default function PaywallScreen() {
                 ) : null}
                 {k === "founding" ? (
                   <View style={{ alignItems: "center", marginBottom: spacing.sm }}>
-                    <OtterMascot size={60} variant="crown" />
+                    <OtterMascot size={72} variant="crown" />
                   </View>
                 ) : null}
                 <Text style={[styles.planTitle, { color: k === "founding" ? colors.accent : colors.text, fontFamily: fonts.displayBold }]}>

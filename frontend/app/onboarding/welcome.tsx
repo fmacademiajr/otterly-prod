@@ -22,7 +22,7 @@ export default function Welcome() {
     <SafeAreaView style={[styles.safe, { backgroundColor: colors.background }]}>
       <View style={styles.container}>
         <View style={styles.middle}>
-          <OtterMascot size={260} variant="line" color={colors.primary} />
+          <OtterMascot size={240} variant="wave" />
           <View style={{ height: spacing.xxl }} />
           <Text style={[styles.title, { color: TEAL_DARK, fontFamily: fonts.displayBold }]}>
             Otterly
