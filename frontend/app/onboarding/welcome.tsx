@@ -1,31 +1,33 @@
-import { StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
-import { OtterButton, SoftExit } from "@/src/components/OtterButton";
+import { OtterButton } from "@/src/components/OtterButton";
 import { OtterMascot } from "@/src/components/OtterMascot";
-import { WaterWave } from "@/src/components/motifs";
 import { useTheme } from "@/src/theme/ThemeProvider";
-import { fonts, spacing } from "@/src/theme/tokens";
+import { fonts, radii, spacing } from "@/src/theme/tokens";
+import { storage } from "@/src/utils/storage";
+
+const TEAL_DARK = "#2E7268";
 
 export default function Welcome() {
   const router = useRouter();
   const { colors } = useTheme();
 
+  const skip = async () => {
+    await storage.setItem("otterly.onboarded", true);
+    router.replace("/(tabs)/next");
+  };
+
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: colors.background }]}>
       <View style={styles.container}>
-        <View style={styles.top}>
-          <OtterMascot size={160} variant="default" />
-          <View style={{ height: spacing.md }} />
-          <WaterWave width={220} color={colors.border} />
-        </View>
-
         <View style={styles.middle}>
-          <Text style={[styles.hello, { color: colors.textMuted, fontFamily: fonts.body }]}>hi</Text>
-          <Text style={[styles.title, { color: colors.text, fontFamily: fonts.displayBold }]}>
+          <OtterMascot size={260} variant="line" color={colors.primary} />
+          <View style={{ height: spacing.xxl }} />
+          <Text style={[styles.title, { color: TEAL_DARK, fontFamily: fonts.displayBold }]}>
             Otterly
           </Text>
-          <Text style={[styles.subtitle, { color: colors.textMuted, fontFamily: fonts.body }]}>
+          <Text style={[styles.subtitle, { color: colors.text, fontFamily: fonts.body }]}>
             A calm place to start.{"\n"}One tiny step at a time.
           </Text>
         </View>
@@ -35,16 +37,13 @@ export default function Welcome() {
             label="Begin"
             testID="onboarding-begin"
             onPress={() => router.push("/onboarding/firstshrink")}
+            style={{ borderRadius: radii.pill }}
           />
-          <SoftExit
-            label="I'll skip and just look around"
-            testID="onboarding-skip"
-            onPress={async () => {
-              const { storage } = await import("@/src/utils/storage");
-              await storage.setItem("otterly.onboarded", true);
-              router.replace("/(tabs)/next");
-            }}
-          />
+          <TouchableOpacity onPress={skip} testID="onboarding-skip" style={styles.skipBtn}>
+            <Text style={{ color: colors.primary, fontFamily: fonts.body, fontSize: 15 }}>
+              I&apos;ll skip and just look around
+            </Text>
+          </TouchableOpacity>
         </View>
       </View>
     </SafeAreaView>
@@ -53,11 +52,19 @@ export default function Welcome() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1 },
-  container: { flex: 1, paddingHorizontal: spacing.lg, paddingVertical: spacing.xl, justifyContent: "space-between" },
-  top: { alignItems: "center", marginTop: spacing.xl },
-  middle: { alignItems: "center", paddingHorizontal: spacing.lg },
-  hello: { fontSize: 14, letterSpacing: 4, textTransform: "uppercase", marginBottom: spacing.md },
-  title: { fontSize: 56, letterSpacing: -1, marginBottom: spacing.base },
-  subtitle: { fontSize: 17, textAlign: "center", lineHeight: 26 },
-  bottom: { gap: spacing.sm },
+  container: {
+    flex: 1,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.xl,
+    justifyContent: "space-between",
+  },
+  middle: { alignItems: "center", flex: 1, justifyContent: "center" },
+  title: { fontSize: 56, letterSpacing: -1, marginBottom: spacing.lg },
+  subtitle: {
+    fontSize: 17,
+    textAlign: "center",
+    lineHeight: 26,
+  },
+  bottom: { gap: spacing.md, alignItems: "center" },
+  skipBtn: { paddingVertical: spacing.md },
 });

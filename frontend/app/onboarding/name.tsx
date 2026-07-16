@@ -2,15 +2,16 @@ import { useState } from "react";
 import {
   KeyboardAvoidingView,
   Platform,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
+  TouchableOpacity,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
-import { OtterButton, SoftExit } from "@/src/components/OtterButton";
+import { ArrowLeft } from "lucide-react-native";
+
 import { useTheme } from "@/src/theme/ThemeProvider";
 import { fonts, radii, spacing } from "@/src/theme/tokens";
 import { storage } from "@/src/utils/storage";
@@ -19,115 +20,146 @@ export default function NameScreen() {
   const router = useRouter();
   const { colors } = useTheme();
   const [name, setName] = useState("");
-  const [reminder, setReminder] = useState("20:00");
 
   const finish = async () => {
     if (name.trim()) await storage.setItem("otterly.userName", name.trim());
-    if (reminder.trim()) await storage.setItem("otterly.reminderTime", reminder.trim());
     await storage.setItem("otterly.onboarded", true);
     router.replace("/(tabs)/next");
   };
 
   return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: colors.background }]}>
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-      >
-        <ScrollView
-          contentContainerStyle={styles.scroll}
-          keyboardShouldPersistTaps="handled"
+    <View style={[styles.root, { backgroundColor: colors.background }]}>
+      {/* Top cream band with title */}
+      <SafeAreaView edges={["top"]} style={[styles.topBand, { backgroundColor: colors.warmBg }]}>
+        <TouchableOpacity
+          testID="name-back"
+          onPress={() => router.back()}
+          style={styles.backBtn}
         >
+          <ArrowLeft color={colors.textMuted} size={22} strokeWidth={1.6} />
+        </TouchableOpacity>
+        <View style={styles.topContent}>
           <Text
             style={[
               styles.eyebrow,
-              { color: colors.textSubtle, fontFamily: fonts.body },
+              { color: colors.textMuted, fontFamily: fonts.bodySemibold },
             ]}
           >
-            almost there
+            STEP TWO
           </Text>
           <Text
-            style={[
-              styles.title,
-              { color: colors.text, fontFamily: fonts.displayBold },
-            ]}
+            style={[styles.title, { color: colors.text, fontFamily: fonts.displayBold }]}
           >
-            One last thing.
+            What should I{"\n"}call you?
           </Text>
-          <Text
-            style={[
-              styles.sub,
-              { color: colors.textMuted, fontFamily: fonts.body },
-            ]}
-          >
-            So Otterly can say hi properly.
-          </Text>
+        </View>
+      </SafeAreaView>
 
-          <View style={{ height: spacing.xl }} />
+      {/* Middle white area with input */}
+      <KeyboardAvoidingView
+        style={styles.middle}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+      >
+        <TextInput
+          testID="user-name-input"
+          value={name}
+          onChangeText={setName}
+          placeholder="Your name"
+          placeholderTextColor={colors.textSubtle}
+          style={[
+            styles.input,
+            {
+              color: colors.text,
+              backgroundColor: colors.background,
+              borderColor: colors.border,
+              fontFamily: fonts.body,
+            },
+          ]}
+        />
+      </KeyboardAvoidingView>
 
-          <Text style={[styles.label, { color: colors.textMuted, fontFamily: fonts.body }]}>
-            Your name (optional)
-          </Text>
-          <TextInput
-            testID="user-name-input"
-            value={name}
-            onChangeText={setName}
-            placeholder="Fernando"
-            placeholderTextColor={colors.textSubtle}
-            style={[
-              styles.input,
-              { color: colors.text, backgroundColor: colors.surface, borderColor: colors.border, fontFamily: fonts.body },
-            ]}
-          />
-
-          <View style={{ height: spacing.lg }} />
-
-          <Text style={[styles.label, { color: colors.textMuted, fontFamily: fonts.body }]}>
-            Gentle reminder time
-          </Text>
-          <TextInput
-            testID="reminder-time-input"
-            value={reminder}
-            onChangeText={setReminder}
-            placeholder="20:00"
-            placeholderTextColor={colors.textSubtle}
-            style={[
-              styles.input,
-              { color: colors.text, backgroundColor: colors.surface, borderColor: colors.border, fontFamily: fonts.numeric },
-            ]}
-          />
-          <Text style={[styles.help, { color: colors.textSubtle, fontFamily: fonts.body }]}>
-            Never more than one nudge a day. We promise.
-          </Text>
-        </ScrollView>
-
-        <View style={styles.actions}>
-          <OtterButton
-            label="I'm ready"
+      {/* Bottom cream band with promise + All set CTA */}
+      <View style={[styles.bottomBand, { backgroundColor: colors.warmBg }]}>
+        <Text
+          style={[styles.promise, { color: colors.textMuted, fontFamily: fonts.body }]}
+        >
+          Never more than one nudge a day.{"\n"}We promise.
+        </Text>
+        <SafeAreaView edges={["bottom"]}>
+          <TouchableOpacity
             testID="onboarding-finish"
             onPress={finish}
-          />
-          <SoftExit label="Skip for now" testID="onboarding-skip-name" onPress={finish} />
-        </View>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+            style={[styles.cta, { backgroundColor: colors.primary }]}
+          >
+            <Text
+              style={{
+                color: colors.onPrimary,
+                fontFamily: fonts.bodySemibold,
+                fontSize: 17,
+              }}
+            >
+              All set
+            </Text>
+          </TouchableOpacity>
+        </SafeAreaView>
+      </View>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1 },
-  scroll: { padding: spacing.lg, paddingTop: spacing.xl },
-  eyebrow: { fontSize: 12, letterSpacing: 4, textTransform: "uppercase", marginBottom: spacing.md },
-  title: { fontSize: 32, lineHeight: 40, marginBottom: spacing.xs },
-  sub: { fontSize: 16, lineHeight: 24 },
-  label: { fontSize: 13, letterSpacing: 1, textTransform: "uppercase", marginBottom: spacing.sm },
+  root: { flex: 1 },
+  topBand: {
+    paddingBottom: spacing.xl,
+  },
+  backBtn: {
+    padding: spacing.md,
+    alignSelf: "flex-start",
+  },
+  topContent: {
+    alignItems: "center",
+    paddingHorizontal: spacing.lg,
+    marginTop: spacing.sm,
+  },
+  eyebrow: {
+    fontSize: 13,
+    letterSpacing: 3,
+    textTransform: "uppercase",
+    marginBottom: spacing.md,
+  },
+  title: {
+    fontSize: 40,
+    lineHeight: 48,
+    textAlign: "center",
+    letterSpacing: -0.5,
+  },
+  middle: { flex: 1, justifyContent: "center", paddingHorizontal: spacing.lg },
   input: {
-    height: 52,
+    height: 64,
     borderRadius: radii.lg,
     borderWidth: 1,
     paddingHorizontal: spacing.base,
     fontSize: 17,
+    textAlign: "center",
   },
-  help: { fontSize: 13, marginTop: spacing.sm },
-  actions: { padding: spacing.lg, gap: spacing.xs },
+  bottomBand: {
+    paddingTop: spacing.lg,
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.base,
+    alignItems: "center",
+  },
+  promise: {
+    fontSize: 15,
+    lineHeight: 22,
+    textAlign: "center",
+    marginBottom: spacing.lg,
+  },
+  cta: {
+    height: 56,
+    borderRadius: radii.pill,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: spacing.xl,
+    minWidth: 280,
+  },
 });

@@ -1,96 +1,93 @@
-import { Linking, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Linking, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
-import { X, Phone } from "lucide-react-native";
+import { X } from "lucide-react-native";
 
+import { OtterMascot } from "@/src/components/OtterMascot";
 import { useTheme } from "@/src/theme/ThemeProvider";
 import { fonts, radii, spacing } from "@/src/theme/tokens";
-import { OtterGlyph, WaterWave } from "@/src/components/motifs";
-import { SoftExit } from "@/src/components/OtterButton";
+
+const CRISIS_BG = "#E5EBF1";       // pale blue-gray (light)
+const CRISIS_BG_DARK = "#1F2A34";  // deep blue-gray (dark)
+const CRISIS_OTTER = "#7A98B0";
 
 const LINES = [
-  { country: "United States", number: "988", note: "Suicide & Crisis Lifeline (call or text)" },
-  { country: "Philippines", number: "1553", note: "NCMH crisis hotline (24/7)" },
-  { country: "United Kingdom", number: "116 123", note: "Samaritans (24/7)" },
-  { country: "Canada", number: "988", note: "Talk Suicide Canada" },
-  { country: "Australia", number: "13 11 14", note: "Lifeline Australia" },
+  { flag: "🇺🇸", label: "US", number: "988", tel: "988" },
+  { flag: "🇵🇭", label: "PH", number: "1553", tel: "1553" },
+  { flag: "🇬🇧", label: "UK", number: "111", tel: "111" },
+  { flag: "🇨🇦", label: "CA", number: "988", tel: "988" },
+  { flag: "🇦🇺", label: "AU", number: "13 11 14", tel: "131114" },
 ];
 
 export default function CrisisScreen() {
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
   const router = useRouter();
+  const bg = isDark ? CRISIS_BG_DARK : CRISIS_BG;
 
   const call = (n: string) => {
-    const clean = n.replace(/\s/g, "");
-    Linking.openURL(`tel:${clean}`).catch(() => {});
+    Linking.openURL(`tel:${n}`).catch(() => {});
   };
 
   return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: colors.background }]} edges={["top"]}>
-      <View style={styles.headerRow}>
-        <TouchableOpacity onPress={() => router.back()} testID="crisis-close" style={styles.closeBtn}>
-          <X color={colors.textMuted} size={22} strokeWidth={1.5} />
-        </TouchableOpacity>
-        <Text style={[styles.eyebrow, { color: colors.textSubtle, fontFamily: fonts.body }]}>
-          you're not alone
-        </Text>
-        <View style={{ width: 22 }} />
-      </View>
+    <View style={[styles.root, { backgroundColor: bg }]}>
+      <SafeAreaView edges={["top"]} style={{ flex: 1 }}>
+        <View style={styles.topRow}>
+          <TouchableOpacity onPress={() => router.back()} testID="crisis-close" style={styles.closeBtn}>
+            <X color={colors.textMuted} size={22} strokeWidth={1.5} />
+          </TouchableOpacity>
+          <View style={{ width: 22 }} />
+        </View>
 
-      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-        <View style={styles.hero}>
-          <OtterGlyph size={80} color={colors.primary} />
-          <View style={{ height: spacing.md }} />
+        <View style={styles.center}>
+          <OtterMascot size={110} variant="line" color={CRISIS_OTTER} />
+          <View style={{ height: spacing.lg }} />
           <Text style={[styles.title, { color: colors.text, fontFamily: fonts.displayBold }]}>
             Please reach a real person.
           </Text>
-          <WaterWave width={160} color={colors.border} />
+          <Text style={[styles.body, { color: colors.text, fontFamily: fonts.body }]}>
+            Otterly is a companion, not a therapist.{"\n"}
+            For immediate help, please connect with{"\n"}
+            professional support below.
+          </Text>
+
+          <View style={{ height: spacing.xl }} />
+
+          <View style={[styles.card, { backgroundColor: colors.background }]}>
+            {LINES.map((l, i) => (
+              <View key={l.label}>
+                <TouchableOpacity
+                  testID={`crisis-${l.label.toLowerCase()}`}
+                  onPress={() => call(l.tel)}
+                  activeOpacity={0.6}
+                  style={styles.row}
+                >
+                  <Text style={styles.flag}>{l.flag}</Text>
+                  <Text
+                    style={{
+                      color: colors.text,
+                      fontFamily: fonts.bodySemibold,
+                      fontSize: 17,
+                      marginLeft: spacing.base,
+                    }}
+                  >
+                    {l.label} - {l.number}
+                  </Text>
+                </TouchableOpacity>
+                {i < LINES.length - 1 ? (
+                  <View style={[styles.divider, { backgroundColor: colors.border }]} />
+                ) : null}
+              </View>
+            ))}
+          </View>
         </View>
-
-        <Text style={[styles.body, { color: colors.textMuted, fontFamily: fonts.body }]}>
-          Otterly is a companion, not a therapist. If you're in crisis, someone trained is on the other end of these numbers — right now.
-        </Text>
-
-        <View style={{ height: spacing.lg }} />
-
-        {LINES.map((l) => (
-          <TouchableOpacity
-            key={l.country}
-            testID={`crisis-${l.country.replace(/\s/g, "-").toLowerCase()}`}
-            onPress={() => call(l.number)}
-            activeOpacity={0.7}
-            style={[styles.row, { backgroundColor: colors.surface, borderColor: colors.border }]}
-          >
-            <View style={{ flex: 1 }}>
-              <Text style={{ color: colors.text, fontFamily: fonts.bodySemibold, fontSize: 15 }}>
-                {l.country}
-              </Text>
-              <Text style={{ color: colors.textMuted, fontFamily: fonts.body, fontSize: 13, marginTop: 2 }}>
-                {l.note}
-              </Text>
-            </View>
-            <View style={styles.number}>
-              <Phone size={14} color={colors.primary} strokeWidth={1.6} />
-              <Text style={{ color: colors.primary, fontFamily: fonts.numeric, fontSize: 16, marginLeft: 6 }}>
-                {l.number}
-              </Text>
-            </View>
-          </TouchableOpacity>
-        ))}
-
-        <View style={{ height: spacing.xl }} />
-        <Text style={[styles.smallPrint, { color: colors.textSubtle, fontFamily: fonts.body }]}>
-          Numbers here are correct as of 2026 launch. Please check your local health system for updates.
-        </Text>
-        <SoftExit label="Come back" testID="crisis-back" onPress={() => router.back()} />
-      </ScrollView>
-    </SafeAreaView>
+      </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1 },
-  headerRow: {
+  root: { flex: 1 },
+  topRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
@@ -98,20 +95,29 @@ const styles = StyleSheet.create({
     paddingTop: spacing.sm,
   },
   closeBtn: { padding: spacing.sm },
-  eyebrow: { fontSize: 12, letterSpacing: 4, textTransform: "uppercase" },
-  scroll: { paddingHorizontal: spacing.lg, paddingBottom: spacing.xxl },
-  hero: { alignItems: "center", marginTop: spacing.lg, marginBottom: spacing.lg },
-  title: { fontSize: 26, lineHeight: 34, textAlign: "center", marginBottom: spacing.base },
-  body: { fontSize: 15, lineHeight: 22 },
+  center: { flex: 1, alignItems: "center", paddingHorizontal: spacing.lg, paddingTop: spacing.md },
+  title: {
+    fontSize: 26,
+    lineHeight: 34,
+    textAlign: "center",
+    marginBottom: spacing.md,
+  },
+  body: {
+    fontSize: 16,
+    lineHeight: 24,
+    textAlign: "center",
+  },
+  card: {
+    width: "100%",
+    borderRadius: radii.lg,
+    paddingHorizontal: spacing.base,
+    paddingVertical: spacing.xs,
+  },
   row: {
     flexDirection: "row",
     alignItems: "center",
-    borderRadius: radii.lg,
-    borderWidth: 1,
-    padding: spacing.base,
-    marginBottom: spacing.sm,
-    gap: spacing.md,
+    paddingVertical: spacing.base,
   },
-  number: { flexDirection: "row", alignItems: "center" },
-  smallPrint: { fontSize: 12, lineHeight: 18, textAlign: "center", marginTop: spacing.md },
+  flag: { fontSize: 26 },
+  divider: { height: 1, marginLeft: spacing.base + 26 + spacing.base },
 });

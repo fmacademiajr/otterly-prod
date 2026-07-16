@@ -1,21 +1,47 @@
 import { useState } from "react";
 import {
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
-import { OtterButton, SoftExit } from "@/src/components/OtterButton";
-import { WaterWave } from "@/src/components/motifs";
+import { ArrowLeft } from "lucide-react-native";
+import Svg, { Path } from "react-native-svg";
+
+import { api } from "@/src/lib/api";
 import { useTheme } from "@/src/theme/ThemeProvider";
 import { fonts, radii, spacing } from "@/src/theme/tokens";
-import { api } from "@/src/lib/api";
 import { storage } from "@/src/utils/storage";
+
+/**
+ * Decorative stylized waves that appear at the bottom of the firstshrink screen.
+ * Multiple concentric wavy lines, teal thin strokes.
+ */
+function StylizedWaves({ color, opacity = 0.35 }: { color: string; opacity?: number }) {
+  return (
+    <View style={{ height: 140, width: "100%", justifyContent: "flex-end" }}>
+      <Svg width="100%" height="140" viewBox="0 0 400 140" preserveAspectRatio="none">
+        {[0, 8, 16, 24, 32, 40, 48].map((offset, i) => (
+          <Path
+            key={i}
+            d={`M-40 ${100 + offset} Q 40 ${60 + offset}, 120 ${100 + offset} T 280 ${100 + offset} T 440 ${100 + offset}`}
+            stroke={color}
+            strokeWidth={1}
+            fill="none"
+            strokeLinecap="round"
+            opacity={opacity - i * 0.03}
+          />
+        ))}
+      </Svg>
+    </View>
+  );
+}
 
 export default function FirstShrink() {
   const router = useRouter();
@@ -29,8 +55,6 @@ export default function FirstShrink() {
     setLoading(true);
     try {
       const task = await api.createTask(clean);
-      // Kick off a shrink so the user experiences the "aha" — we ignore result here,
-      // Shrinker screen will re-fetch.
       api.shrinkTask(task.id, "medium").catch(() => {});
       await storage.setItem("otterly.firstTaskId", task.id);
       router.push({ pathname: "/onboarding/name", params: { taskId: task.id } });
@@ -39,8 +63,13 @@ export default function FirstShrink() {
     }
   };
 
+  const skip = async () => {
+    await storage.setItem("otterly.onboarded", true);
+    router.replace("/(tabs)/next");
+  };
+
   return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: colors.background }]}>
+    <SafeAreaView style={[styles.safe, { backgroundColor: colors.warmBg }]}>
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
@@ -49,25 +78,26 @@ export default function FirstShrink() {
           keyboardShouldPersistTaps="handled"
           contentContainerStyle={styles.scroll}
         >
-          <Text
-            style={[
-              styles.eyebrow,
-              { color: colors.textSubtle, fontFamily: fonts.body },
-            ]}
+          <TouchableOpacity
+            testID="firstshrink-back"
+            onPress={() => router.back()}
+            style={styles.backBtn}
           >
-            step one
-          </Text>
-          <Text
-            style={[
-              styles.title,
-              { color: colors.text, fontFamily: fonts.displayBold },
-            ]}
-          >
-            What's one thing{"\n"}you've been avoiding?
-          </Text>
-          <WaterWave width={180} color={colors.border} />
+            <ArrowLeft color={colors.textMuted} size={22} strokeWidth={1.6} />
+          </TouchableOpacity>
 
-          <View style={{ height: spacing.xl }} />
+          <View style={styles.headerBlock}>
+            <Text
+              style={[styles.eyebrow, { color: colors.textMuted, fontFamily: fonts.bodySemibold }]}
+            >
+              STEP ONE
+            </Text>
+            <Text
+              style={[styles.title, { color: colors.text, fontFamily: fonts.displayBold }]}
+            >
+              What&apos;s one thing{"\n"}you&apos;ve been avoiding?
+            </Text>
+          </View>
 
           <TextInput
             testID="first-task-input"
@@ -80,40 +110,45 @@ export default function FirstShrink() {
               styles.input,
               {
                 color: colors.text,
-                backgroundColor: colors.surface,
-                borderColor: colors.border,
+                backgroundColor: colors.background,
+                borderColor: colors.primary,
                 fontFamily: fonts.body,
               },
             ]}
           />
 
-          <Text
+          <View style={{ height: spacing.lg }} />
+
+          <TouchableOpacity
+            testID="onboarding-shrink"
+            onPress={submit}
+            disabled={!title.trim() || loading}
             style={[
-              styles.hint,
-              { color: colors.textMuted, fontFamily: fonts.body },
+              styles.cta,
+              { backgroundColor: title.trim() ? colors.primary : colors.warmBorder },
             ]}
           >
-            Just name it. We'll shrink it in a second.
-          </Text>
+            <Text
+              style={{
+                color: title.trim() ? colors.onPrimary : colors.textSubtle,
+                fontFamily: fonts.bodySemibold,
+                fontSize: 17,
+              }}
+            >
+              {loading ? "…" : "Shrink it"}
+            </Text>
+          </TouchableOpacity>
         </ScrollView>
 
-        <View style={styles.actions}>
-          <OtterButton
-            label={loading ? "…" : "Shrink it"}
-            testID="onboarding-shrink"
-            loading={loading}
-            disabled={!title.trim() || loading}
-            onPress={submit}
-          />
-          <SoftExit
-            label="Not right now"
-            testID="onboarding-skip-shrink"
-            onPress={async () => {
-              await storage.setItem("otterly.onboarded", true);
-              router.replace("/(tabs)/next");
-            }}
-          />
+        <View pointerEvents="none" style={styles.waves}>
+          <StylizedWaves color={colors.primary} />
         </View>
+
+        <TouchableOpacity onPress={skip} testID="onboarding-skip-shrink" style={styles.skipBtn}>
+          <Text style={{ color: colors.textMuted, fontFamily: fonts.body, fontSize: 14 }}>
+            Skip for now
+          </Text>
+        </TouchableOpacity>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -121,23 +156,41 @@ export default function FirstShrink() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1 },
-  scroll: { padding: spacing.lg, paddingTop: spacing.xl },
+  scroll: { paddingHorizontal: spacing.lg, paddingTop: spacing.sm },
+  backBtn: { padding: spacing.sm, marginLeft: -spacing.sm, alignSelf: "flex-start" },
+  headerBlock: { alignItems: "center", marginTop: spacing.lg, marginBottom: spacing.xl },
   eyebrow: {
-    fontSize: 12,
-    letterSpacing: 4,
+    fontSize: 13,
+    letterSpacing: 3,
     textTransform: "uppercase",
     marginBottom: spacing.md,
   },
-  title: { fontSize: 30, lineHeight: 38, marginBottom: spacing.base },
+  title: {
+    fontSize: 32,
+    lineHeight: 40,
+    textAlign: "center",
+    letterSpacing: -0.5,
+  },
   input: {
-    minHeight: 96,
+    minHeight: 160,
     borderRadius: radii.lg,
     borderWidth: 1,
     padding: spacing.base,
-    fontSize: 18,
-    lineHeight: 26,
+    fontSize: 16,
+    lineHeight: 24,
     textAlignVertical: "top",
   },
-  hint: { fontSize: 14, marginTop: spacing.md, lineHeight: 20 },
-  actions: { padding: spacing.lg, gap: spacing.xs },
+  cta: {
+    height: 56,
+    borderRadius: radii.pill,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  waves: {
+    position: "absolute",
+    bottom: 60,
+    left: 0,
+    right: 0,
+  },
+  skipBtn: { alignItems: "center", padding: spacing.base },
 });

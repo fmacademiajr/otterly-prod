@@ -1,9 +1,9 @@
 import { Tabs } from "expo-router";
-import { Inbox, Waves, MessageCircle, User } from "lucide-react-native";
-import { StyleSheet, View, Text } from "react-native";
+import { Mail, TrendingUp, Home, User } from "lucide-react-native";
+import { StyleSheet } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTheme } from "@/src/theme/ThemeProvider";
-import { fonts, spacing } from "@/src/theme/tokens";
+import { fonts } from "@/src/theme/tokens";
 
 export default function TabsLayout() {
   const { colors } = useTheme();
@@ -34,21 +34,21 @@ export default function TabsLayout() {
         name="next"
         options={{
           title: "Next",
-          tabBarIcon: ({ color }) => <Waves color={color} size={22} strokeWidth={1.6} />,
+          tabBarIcon: ({ color }) => <TrendingUp color={color} size={22} strokeWidth={1.6} />,
         }}
       />
       <Tabs.Screen
         name="inbox"
         options={{
           title: "Inbox",
-          tabBarIcon: ({ color }) => <Inbox color={color} size={22} strokeWidth={1.6} />,
+          tabBarIcon: ({ color }) => <Mail color={color} size={22} strokeWidth={1.6} />,
         }}
       />
       <Tabs.Screen
         name="room"
         options={{
           title: "Room",
-          tabBarIcon: ({ color }) => <MessageCircle color={color} size={22} strokeWidth={1.6} />,
+          tabBarIcon: ({ color }) => <Home color={color} size={22} strokeWidth={1.6} />,
         }}
       />
       <Tabs.Screen
