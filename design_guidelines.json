@@ -1,0 +1,205 @@
+{
+  "project_name": "Otterly",
+  "platform": "mobile_web_app (Expo React Native)",
+  "core_philosophy": "Calm, Philippines-first, ADHD task-starter app. Focus on anti-overwhelm. Help the user decide 'what to do next' and sit with them. Measure progress in micro-steps, not massive tasks. Soft ways out on every screen.",
+  "theme_strategy": "Supports light (default) and dark themes. Accessible via Settings.",
+  "tokens": {
+    "colors": {
+      "light": {
+        "background": "#FFFFFF",
+        "surface": "#FAFAFA",
+        "surfaceMuted": "#F4F4F5",
+        "border": "#E4E4E7",
+        "text": "#18181B",
+        "textMuted": "#52525B",
+        "textSubtle": "#71717A",
+        "primary": "#5E8B82",
+        "primaryHover": "#4E7670",
+        "primaryActive": "#3F605B",
+        "primarySurface": "#EDF4F1",
+        "accent": "#D4A24F",
+        "success": "#3F7D58",
+        "warning": "#B58A3F",
+        "danger": "#A04848"
+      },
+      "dark": {
+        "background": "#14201D",
+        "surface": "#1B2926",
+        "surfaceMuted": "#20302C",
+        "border": "#2C3A36",
+        "text": "#F3F5F4",
+        "textMuted": "#A8B3B0",
+        "textSubtle": "#7E8A87",
+        "primary": "#7BA89F",
+        "primaryHover": "#8FB8B0",
+        "primarySurface": "#1F2D29",
+        "accent": "#E0B26A",
+        "success": "#5E9E78"
+      }
+    },
+    "spacing": {
+      "xs": 4,
+      "sm": 8,
+      "md": 12,
+      "base": 16,
+      "lg": 24,
+      "xl": 32,
+      "2xl": 48,
+      "3xl": 64
+    },
+    "radii": {
+      "sm": 4,
+      "md": 8,
+      "lg": 12,
+      "pill": 9999
+    }
+  },
+  "typography": {
+    "fonts": {
+      "display": "Fraunces (Serif)",
+      "body": "General Sans (Humanist Sans)",
+      "numeric": "DM Sans (with tabular-nums)"
+    },
+    "scale": {
+      "h1": { "fontFamily": "Fraunces", "fontSize": 32, "lineHeight": 40, "color": "text" },
+      "h2": { "fontFamily": "Fraunces", "fontSize": 24, "lineHeight": 32, "color": "text" },
+      "h3": { "fontFamily": "General Sans", "fontWeight": "600", "fontSize": 18, "lineHeight": 24, "color": "text" },
+      "body": { "fontFamily": "General Sans", "fontWeight": "400", "fontSize": 16, "lineHeight": 24, "color": "text" },
+      "bodyMuted": { "fontFamily": "General Sans", "fontWeight": "400", "fontSize": 14, "lineHeight": 20, "color": "textMuted" },
+      "timer": { "fontFamily": "DM Sans", "fontSize": 56, "fontVariant": ["tabular-nums"], "color": "textMuted" },
+      "button": { "fontFamily": "General Sans", "fontWeight": "600", "fontSize": 16 }
+    },
+    "rules": [
+      "NEVER use Inter, Roboto, Poppins, or default system-ui as display/body fonts.",
+      "Use Fraunces strictly for warm/emotional moments: greetings, hero lines, completion states.",
+      "Use DM Sans EXCLUSIVELY for numerical displays (timers, streaks) using tabular-nums."
+    ]
+  },
+  "visual_enhancers": {
+    "shadows": "FORBIDDEN. No drop shadows, no glow, no elevation APIs.",
+    "borders": "Exclusively use 1px hairline borders with the 'border' color token.",
+    "motifs": [
+      "Otter motif: A single restrained SVG glyph (an otter floating on its back). Elegant, single-color (primary or textMuted), no cartoon faces.",
+      "Calm water motif: A subtle hairline SVG wave under the 'Next' card and streak counter. It is a decorative underline accent, NEVER a repeating background pattern."
+    ],
+    "cards": "Surface colored (surface or surfaceMuted), 12px radius, 1px border. Flat design.",
+    "buttons": "Primary buttons: Teal (primary), 12px radius, generous padding (py: 16-24), text colored #FFFFFF."
+  },
+  "components": {
+    "EnergyPill": {
+      "description": "A segmented control for gating task difficulty.",
+      "states": ["low", "medium", "good"],
+      "style": "Pill radius (9999px), background 'surfaceMuted', active state background 'primarySurface' with 'primary' text."
+    },
+    "MicroStepCard": {
+      "description": "The main hero card showing ONE task.",
+      "style": "Background 'surface', radius 12px, border 1px solid 'border'. Generous inner padding (xl: 32px). Contains Fraunces typography for the task name."
+    },
+    "SoftExitButton": {
+      "description": "Secondary actions that provide a 'soft out'.",
+      "style": "Transparent background, text color 'textMuted'. Examples: 'Not this — pick another', 'Come back later'."
+    }
+  },
+  "layouts": {
+    "navigation_architecture": {
+      "type": "Bottom Tab Navigation",
+      "tabs": ["Next", "Inbox", "Room", "You"],
+      "modals": ["Task Shrinker (pushed over tabs from Next/Inbox)"]
+    },
+    "wireframes": {
+      "Onboarding": {
+        "Screen1": "Welcome: Large Otter floating SVG, Fraunces H1 'Welcome to Otterly'. Primary Button 'Begin'.",
+        "Screen2": "Identification: H2 'What's one thing you've been avoiding?'. Large text input (General Sans).",
+        "Screen3": "Resolution: Displays first 'Shrink AHA' (showing how the task breaks down). Input for Name & Reminder Time."
+      },
+      "Next_Tab_Home": {
+        "Description": "The anti-overwhelm hero screen. ONE thing at a time.",
+        "Elements": [
+          "Energy check-in row at top: 'How are you feeling?' + EnergyPill (low/medium/good).",
+          "Hero MicroStepCard: 'Do this next: [Task Name]'.",
+          "Hairline Wave SVG placed gracefully directly underneath the card.",
+          "Primary Action: Large 'Start' button.",
+          "Secondary Actions (Vertical Stack): 'Not this — pick another', 'I'm too tired'.",
+          "Empty State: Fraunces text 'What's on your mind?' with a button leading to Inbox braindump."
+        ]
+      },
+      "Inbox_Tab": {
+        "Description": "Capture space for brain clutter.",
+        "Elements": [
+          "Header: 'Add anything you're avoiding'.",
+          "Input: Multiline text input area for braindumping.",
+          "Action: 'Braindump' primary button (Triggers AI parsing).",
+          "List: Flat list of unstructured tasks waiting to be shrunk, soft borders between items."
+        ]
+      },
+      "Task_Shrinker_Modal": {
+        "Description": "Breaks overwhelming tasks into digestible micro-steps via AI.",
+        "Elements": [
+          "Header: Selected Task Name (Fraunces).",
+          "Controls: Difficulty slider (Easy / Medium / Hard) adapting AI chunking.",
+          "List of Steps: 3-12 items. Each item has a tappable checkbox, text, and an inline 5/10/25 min timer pill.",
+          "Item Action: 'Re-shrink this step' button (soft text) on long-press or swipe.",
+          "Timer Display: If timer active, shows massive DM Sans numerals."
+        ]
+      },
+      "Room_Tab": {
+        "Description": "Sit-With-Me AI body-double.",
+        "Elements": [
+          "UI Style: Chat-style interface but EXTREMELY low-stim.",
+          "Header: Warm greeting (Fraunces).",
+          "Feed: Generous whitespace. Messages are sparse (e.g., 'I am sitting quietly with you.', 'Still with you.').",
+          "Input: Simple chat input at bottom for user to declare goals."
+        ]
+      },
+      "You_Tab": {
+        "Description": "Settings and forgiving streak tracking.",
+        "Elements": [
+          "Streak Counter: DM Sans numerals. Text: 'You showed up X of 7 days'.",
+          "Visual: Soft water ripple SVG graphic.",
+          "Rules: NO fire emojis, NO gamified XP loops.",
+          "Settings Section: Name input, Reminder time picker, Theme toggle (Light/Dark)."
+        ]
+      }
+    }
+  },
+  "motion": {
+    "default": "Calm, slow, no bounce. Linear or ease-out curves.",
+    "durations": "150ms to 400ms.",
+    "animations": {
+      "entrance": "FadeIn or FadeInDown. Elements gently appear rather than sliding aggressively.",
+      "transitions": "Crossfade for screen transitions, avoiding harsh lateral sliding where possible."
+    }
+  },
+  "accessibility": {
+    "contrast": "Ensure 'textMuted' against 'surface' meets APCA/WCAG AA minimums (at least 4.5:1).",
+    "touch_targets": "Minimum 48x48 logical pixels for all interactive elements.",
+    "testing": "All interactive elements MUST include a `data-testid` attribute (e.g., `data-testid=\"start-task-button\"`).",
+    "cognitive_load": "Honor the 'one thing on screen' rule strictly for the Next tab. Use whitespace as a structural element to reduce visual noise."
+  },
+  "media": {
+    "icons": "Use 'lucide-react-native'. Banned: Emojis.",
+    "svg_assets": {
+      "otter_hero": "Provide a simple SVG string using react-native-svg: A minimalist continuous-line drawing of an otter on its back. Use a single path with stroke='currentColor', fill='none', strokeWidth='1.5'.",
+      "water_wave": "A delicate SVG wave: <Svg height='20' width='100%'><Path d='M0 10 Q 50 20, 100 10 T 200 10' fill='none' stroke='#E4E4E7' strokeWidth='1' /></Svg>"
+    }
+  },
+  "instructions_to_main_agent": [
+    "Strictly honor the anti-overwhelm, ADHD-friendly product philosophy: progress is micro-steps, not tasks.",
+    "Configure Expo to use `react-native-svg` for the otter and wave visuals.",
+    "Use StyleSheet.create for all component styling. Do not use inline styles unless for dynamic animated values.",
+    "Do not implement a standard scrollable 'todo list' on the Home/Next tab. It must only ever show one task.",
+    "Never use purple or bright neon alert colors. Rely strictly on the provided palette.",
+    "Never use dropshadows (e.g., `shadowColor`, `elevation`). UI should feel completely flat with hairline borders.",
+    "Use Lucide React Native for iconography.",
+    "Apply `data-testid` to buttons, inputs, and list items.",
+    "Implement the 'Soft ways out' principle: Ensure every modal/screen has an easily identifiable secondary text button to exit or skip."
+  ],
+  "UNIVERSAL GUIDELINES FOR MAIN AGENT": [
+    "You tend to converge toward generic, 'on distribution' outputs. In frontend design, this creates what users call the 'AI slop' aesthetic. Avoid this: make creative, distinctive frontends that surprise and delight.",
+    "DO NOT use complete `transparent` background in headers, overlays, or any surface that has content scrolling under it.",
+    "Do not make generic centered layouts and uniform styling. Use asymmetry where appropriate to create natural reading flows.",
+    "Use 2-3x more spacing than feels comfortable. Cramped designs look cheap.",
+    "For mobile apps, stick strictly to the exact hex codes provided in the DESIGN.md token list.",
+    "Never invent placeholder text using fake URLs or use emojis in place of proper SVG/vector icons."
+  ]
+}
