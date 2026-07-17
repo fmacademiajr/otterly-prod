@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Alert,
+  Linking,
   Platform,
   ScrollView,
   StyleSheet,
@@ -22,6 +23,11 @@ import { useTheme } from "@/src/theme/ThemeProvider";
 import { fonts, radii, spacing } from "@/src/theme/tokens";
 import { storage } from "@/src/utils/storage";
 import { useAuth } from "@/src/auth/AuthProvider";
+
+// Lives on the marketing site, which is already the app's public face. Apple 5.1.1
+// requires an in-app link to it for any app that collects data, and Otterly collects
+// email, voice, and mental-health-adjacent free text.
+const PRIVACY_URL = "https://getotterly.com/privacy";
 
 export default function YouScreen() {
   const { colors, isDark, mode, setMode } = useTheme();
@@ -349,6 +355,21 @@ export default function YouScreen() {
                 </TouchableOpacity>
               </>
             ) : null}
+
+            {/* Outside the authed block on purpose. An anonymous user's braindumps and
+                Room messages still go to a model, so they need the policy just as much
+                as a signed-in one. Apple 5.1.1 gates submission on this link existing. */}
+            <View style={[styles.divider, { backgroundColor: colors.border }]} />
+            <TouchableOpacity
+              testID="privacy-policy"
+              style={styles.row}
+              onPress={() => Linking.openURL(PRIVACY_URL)}
+            >
+              <Text style={[styles.rowLabel, { color: colors.text, fontFamily: fonts.body }]}>
+                Privacy policy
+              </Text>
+              <ChevronRight size={18} color={colors.textSubtle} strokeWidth={1.4} />
+            </TouchableOpacity>
           </View>
 
           <TouchableOpacity
