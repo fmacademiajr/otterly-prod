@@ -33,14 +33,47 @@ async function loadModule(): Promise<PurchasesModule | null> {
   }
 }
 
-export async function initRevenueCat(appUserId?: string) {
+let currentAppUserId: string | null = null;
+
+/**
+ * Bind RevenueCat to the signed-in user.
+ *
+ * The old initRevenueCat() configured on first call and latched `configured`,
+ * so the mount-time call (user still null, auth still "loading") pinned every
+ * install to an anonymous $RCAnonymousID and the post-sign-in call bailed at
+ * the guard. Purchases then landed on an id the webhook wrote and
+ * get_entitlement could never read, so a payer stayed on the free tier forever.
+ *
+ * configure() may only run once per process. Identity changes after that go
+ * through logIn/logOut, which is what RevenueCat expects.
+ *
+ * Callers must wait until auth resolves. Passing undefined while status is
+ * "loading" is what caused the original bug, so this treats undefined as
+ * "not resolved yet" and does nothing.
+ */
+export async function identify(appUserId?: string | null) {
+  if (appUserId === undefined) return; // auth still resolving, not a logout
   const p = await loadModule();
-  if (!p || configured) return;
+  if (!p) return;
   const key = Platform.OS === "ios" ? IOS_KEY : ANDROID_KEY;
   if (!key) return;
+
   try {
-    await p.configure({ apiKey: key, appUserID: appUserId ?? null });
-    configured = true;
+    if (!configured) {
+      // Configure with the real id when we have one, so the very first
+      // customer record carries it and no anonymous id is ever minted.
+      await p.configure({ apiKey: key, appUserID: appUserId ?? null });
+      configured = true;
+      currentAppUserId = appUserId ?? null;
+      return;
+    }
+    if (appUserId === currentAppUserId) return;
+    if (appUserId) {
+      await p.logIn(appUserId);
+    } else {
+      await p.logOut();
+    }
+    currentAppUserId = appUserId ?? null;
   } catch {}
 }
 
@@ -80,7 +113,7 @@ export async function restore(): Promise<boolean> {
 export const revenuecat = {
   canRunNativeIAP,
   isExpoGo,
-  initRevenueCat,
+  identify,
   fetchPackages,
   purchase,
   restore,

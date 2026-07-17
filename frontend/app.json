@@ -10,7 +10,10 @@
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.emergent.otterlynext.u9tal9",
+      "bundleIdentifier": "com.getotterly.app",
+      "config": {
+        "usesNonExemptEncryption": false
+      },
       "infoPlist": {
         "NSMicrophoneUsageDescription": "Otterly listens so you can capture tasks by voice."
       }
@@ -21,7 +24,7 @@
         "backgroundColor": "#5E8B82"
       },
       "edgeToEdgeEnabled": true,
-      "package": "com.emergent.otterlynext.u9tal9",
+      "package": "com.getotterly.app",
       "permissions": [
         "android.permission.RECORD_AUDIO"
       ]
