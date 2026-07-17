@@ -6,11 +6,13 @@
 
 ## 1. Name & subtitle
 
-**App name (30 chars max)** — 7 chars
+**App name (30 chars max)** — 28 chars, live in App Store Connect as of 2026-07-17
 
 ```
-Otterly
+Otterly: Start, Not Alone
 ```
+
+*Rationale: `Otterly` alone was globally taken. The subtitle-style suffix keeps the ADHD/companion positioning discoverable (`Start` = task-starter, `Not Alone` = Sit-With-Me). Home-screen display name in `app.json` stays the shorter `Otterly`.*
 
 **Subtitle (30 chars max)** — 29 chars, fits
 
