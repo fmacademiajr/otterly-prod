@@ -86,3 +86,6 @@ android-sdk/
 credentials.json
 *.key
 .credentials
+
+# superpowers SDD scratch (progress ledger)
+.superpowers/

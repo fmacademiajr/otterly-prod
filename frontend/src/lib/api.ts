@@ -113,18 +113,27 @@ export const api = {
   shrinkTask: (
     taskId: string,
     difficulty: "easy" | "medium" | "hard",
-    deep = false
+    deep = false,
+    opts: { force?: boolean; tooBig?: boolean } = {}
   ) =>
     req<Step[]>(`/api/tasks/${taskId}/shrink`, {
       method: "POST",
-      body: JSON.stringify({ difficulty, deep }),
+      body: JSON.stringify({
+        difficulty,
+        deep,
+        force: opts.force ?? false,
+        too_big: opts.tooBig ?? false,
+      }),
     }),
   toggleStep: (stepId: string, done: boolean) =>
     req<Step>(`/api/steps/${stepId}`, { method: "PATCH", body: JSON.stringify({ done }) }),
   next: (energy: Energy, minutes?: number) =>
     req<NextResponse>("/api/next", { method: "POST", body: JSON.stringify({ energy, minutes }) }),
   braindump: (text: string) =>
-    req<{ tasks: string[] }>("/api/braindump", { method: "POST", body: JSON.stringify({ text }) }),
+    req<{ tasks: string[]; referral?: string | null }>("/api/braindump", {
+      method: "POST",
+      body: JSON.stringify({ text }),
+    }),
 
   transcribe: async (uri: string): Promise<{ text: string }> => {
     const form = new FormData();
@@ -163,6 +172,23 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ session_token, device_id }),
     }),
+  appleAuth: (identity_token: string, device_id?: string, full_name?: string) =>
+    req<StoredUser & { session_token: string; expires_at: string }>("/api/auth/apple", {
+      method: "POST",
+      body: JSON.stringify({ identity_token, device_id, full_name }),
+    }),
   me: () => req<StoredUser>("/api/auth/me"),
   logout: () => req<{ ok: boolean }>("/api/auth/logout", { method: "POST" }),
+  deleteAccount: async () =>
+    req<{ ok: boolean; deleted: Record<string, number> }>("/api/account", {
+      method: "DELETE",
+      headers: { "X-Device-Id": await identity.getDeviceId() }, // Bearer survives the merge
+    }),
+
+  // Vouchers
+  redeemVoucher: (code: string) =>
+    req<{ ok: boolean; plan: string; expires_at_ms?: number | null }>("/api/vouchers/redeem", {
+      method: "POST",
+      body: JSON.stringify({ code }),
+    }),
 };

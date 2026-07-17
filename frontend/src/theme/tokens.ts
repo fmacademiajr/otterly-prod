@@ -66,7 +66,12 @@ export const colorsDark = {
   border: "#2C3A36",
   text: "#F3F5F4",
   textMuted: "#A8B3B0",
-  textSubtle: "#7E8A87",
+  // Was #7E8A87: 4.34:1 on warmBg, 4.22 on surface, 3.86 on surfaceMuted — under the
+  // 4.5 bar for body text on three real readable sites, including the "Sign out"
+  // label. Low-contrast text costs extraneous cognitive load, which this audience
+  // has none of to spare. #8F9B98 clears every surface (4.78-5.83) and still sits
+  // below textMuted, so the hierarchy holds.
+  textSubtle: "#8F9B98",
 
   tealBand: "#1F2D29",
   tealBandBorder: "#2C3A36",

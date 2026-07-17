@@ -54,7 +54,7 @@ console work and art, listed in §5 and §6. Both need a human, not a code chang
 | ID | What | Owner |
 |---|---|---|
 | B5-verify | The Apple **UI** is unverified until a TestFlight build. `isAvailableAsync()` is false on web, so the native flow was confirmed by code inspection only, never run. | Fernando, on first build |
-| B7 | Four broken art assets, incl. an **Apple logo** in `otter-focus.png` | Fernando / designer |
+| B7 | Four broken art assets, incl. an **Apple logo** in `otter-focus.png` | **Resolved 2026-07-17 (Emergent)** — regenerated via Nano Banana, flood-filled to real transparency, verified in-app. See §6 addendum. |
 | — | Everything in §5 (console) and the web deploy in §5.6 | Fernando |
 
 ---
@@ -206,3 +206,30 @@ Three things were additionally verified against a **real mongod**, not just a fa
 | `HANDOFF-TO-EMERGENT.md` + `EMERGENT-PROMPT.md` | This file, and the prompt to paste into Emergent as the first message |
 | `frontend/EAS-SETUP.md` | Build and submit steps |
 | `DESIGNER_BRIEF.md` | Authoritative design intent. **Stale on the otter and the yearly tier** — see §3 |
+
+---
+
+## §6 addendum — 2026-07-17 art fixes (Emergent)
+
+The four broken assets were regenerated on 2026-07-17 during the sync-back from
+GitHub. All four now match `otter-default.png`: closed-mouth calm, muted browns
+and sand, no text, no third-party marks, no shouting pose, no teeth.
+
+| File | New composition | Verified |
+|---|---|---|
+| `otter-focus.png` | Sitting quietly, both paws in lap, gentle eye contact. No laptop. | Room "resting" state, 130px |
+| `otter-focused.png` | One paw at chin, thinking pose, calm smile. No scowl, no timer text. | Shrink timer header, 44px |
+| `otter-working.png` | One paw softly raised mid-gesture. No laptop, no text. | Room "sending" state |
+| `otter-celebrate.png` | Eyes gently closed, paw on chest, quiet contentment. No raised arms, no teeth. | Shrink completion, 70px |
+
+Pipeline used:
+
+1. `backend/scripts/gen_otter_fixes.py` — Nano Banana regen with hard style-rule
+   negatives ("no laptop, no Apple logo, no text, no teeth, no shouting").
+2. `backend/scripts/flood_fill_transparent.py` — Nano Banana bakes the
+   checkerboard transparency indicator into pixels (alpha 255, greyscale RGB).
+   Flood-fill from all four edges restores real alpha=0 without eating the
+   otter's cream belly (belly RGB #E8D8BE is outside the greyscale gate).
+
+Interim mitigation from §6 (`swap room.tsx:149 off the focus variant`) is
+**not applied** — no longer needed. Left the wiring alone.

@@ -1,5 +1,5 @@
 import { Tabs } from "expo-router";
-import { Mail, TrendingUp, Home, User } from "lucide-react-native";
+import { Mail, Waves, MessageCircle, User } from "lucide-react-native";
 import { StyleSheet } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTheme } from "@/src/theme/ThemeProvider";
@@ -34,7 +34,11 @@ export default function TabsLayout() {
         name="next"
         options={{
           title: "Next",
-          tabBarIcon: ({ color }) => <TrendingUp color={color} size={22} strokeWidth={1.6} />,
+          // Was TrendingUp: a rising growth-chart arrow, in the tab bar of an app
+          // whose brief says "No numbers-go-up dopamine" and "not
+          // enterprise-blue-and-charts". Waves is the brief's own spec and its
+          // calm-water motif.
+          tabBarIcon: ({ color }) => <Waves color={color} size={22} strokeWidth={1.6} />,
         }}
       />
       <Tabs.Screen
@@ -48,7 +52,8 @@ export default function TabsLayout() {
         name="room"
         options={{
           title: "Room",
-          tabBarIcon: ({ color }) => <Home color={color} size={22} strokeWidth={1.6} />,
+          // Was Home, which pointed the house glyph at the wrong tab — Next is home.
+          tabBarIcon: ({ color }) => <MessageCircle color={color} size={22} strokeWidth={1.6} />,
         }}
       />
       <Tabs.Screen

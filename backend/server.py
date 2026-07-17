@@ -14,8 +14,10 @@ Endpoints all under /api. Auth endpoints:
   POST   /api/auth/session       exchange Emergent session_token → app session
   GET    /api/auth/me            current user profile
   POST   /api/auth/logout        drop server session
+  DELETE /api/account            delete account and all owned data
   GET    /api/me/access          entitlement snapshot { premium: bool, plan: str, limits }
   POST   /api/webhooks/revenuecat  RevenueCat webhook (HMAC-signed)
+  POST   /api/vouchers/redeem    redeem a free-access code (press/beta), require_user only
 """
 from fastapi import FastAPI, APIRouter, HTTPException, Request, Header, Depends, UploadFile, File
 from dotenv import load_dotenv
@@ -23,11 +25,14 @@ from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import json
+import re
 import hmac
 import hashlib
 import time
 import logging
 import httpx
+import secrets
+import jwt
 from pathlib import Path
 from pydantic import BaseModel, Field
 from typing import List, Optional, Literal, Tuple
@@ -61,6 +66,11 @@ if SENTRY_DSN and SENTRY_DSN != "placeholder":
 
 EMERGENT_SESSION_DATA_URL = "https://demobackend.emergentagent.com/auth/v1/env/oauth/session-data"
 
+# Apple Sign In: we verify the identity_token only, never store Apple tokens (see task-4-brief).
+APPLE_BUNDLE_ID = os.environ.get("APPLE_BUNDLE_ID", "com.getotterly.app")
+APPLE_ISSUER = "https://appleid.apple.com"
+_apple_jwks = jwt.PyJWKClient(f"{APPLE_ISSUER}/auth/keys")  # PyJWKClient caches keys internally
+
 client = AsyncIOMotorClient(MONGO_URL)
 db = client[DB_NAME]
 
@@ -77,8 +87,8 @@ Difficulty = Literal["easy", "medium", "hard"]
 
 
 class TaskCreate(BaseModel):
-    title: str
-    note: Optional[str] = None
+    title: str = Field(max_length=200)
+    note: Optional[str] = Field(default=None, max_length=2000)
 
 
 class Task(BaseModel):
@@ -103,6 +113,8 @@ class Step(BaseModel):
 class ShrinkRequest(BaseModel):
     difficulty: Difficulty = "medium"
     deep: bool = False  # premium: use Opus-4-8 for a deeper shrink
+    force: bool = False  # re-shrink even though finished steps will be destroyed
+    too_big: bool = False  # the last steps were too big, ask for smaller first actions
 
 
 class NextRequest(BaseModel):
@@ -118,17 +130,19 @@ class NextResponse(BaseModel):
 
 
 class BraindumpRequest(BaseModel):
-    text: str
+    text: str = Field(max_length=5000)
 
 
 class BraindumpResponse(BaseModel):
     tasks: List[str]
+    # ponytail: braindump discards feelings by design, so a disclosure had nowhere to land.
+    referral: Optional[str] = None
 
 
 class RoomMessage(BaseModel):
     session_id: str
-    text: str
-    goal: Optional[str] = None
+    text: str = Field(max_length=2000)
+    goal: Optional[str] = Field(default=None, max_length=200)
 
 
 class RoomResponse(BaseModel):
@@ -154,16 +168,22 @@ class SessionExchangeRequest(BaseModel):
     device_id: Optional[str] = None
 
 
+class AppleAuthRequest(BaseModel):
+    identity_token: str
+    device_id: Optional[str] = None
+    full_name: Optional[str] = Field(default=None, max_length=100)  # first authorization only
+
+
 class UserProfile(BaseModel):
     user_id: str
-    email: str
+    email: str = ""
     name: str
     picture: Optional[str] = None
 
 
 class AccessResponse(BaseModel):
     premium: bool
-    plan: str  # "free" | "otter_monthly" | "otter_yearly" | "otter_lifetime"
+    plan: str  # "free" | "otter_monthly" | "otter_lifetime" (yearly dropped pre-launch)
     limits: dict  # {"shrinks_today": int, "shrinks_cap": int, ...}
 
 
@@ -221,14 +241,46 @@ FREE_LIMITS = {"shrinks": 3, "braindumps": 5, "room_messages": 20}
 
 
 async def get_entitlement(owner_id: str, user_id: Optional[str]) -> dict:
-    """Return {'active': bool, 'plan': str}."""
+    """Return {'active': bool, 'plan': str}.
+
+    Two sources, resolved in order: db.entitlements (RevenueCat) first, then
+    db.vouchers. A real payer must NEVER be downgraded by a lapsed voucher, so
+    an active paid entitlement returns immediately — the voucher is never even
+    read in that case.
+    """
     if not user_id:
         return {"active": False, "plan": "free"}
+    now_ms = datetime.now(timezone.utc).timestamp() * 1000
+
     doc = await db.entitlements.find_one({"user_id": user_id}, {"_id": 0})
-    if not doc:
-        return {"active": False, "plan": "free"}
-    prem = doc.get("premium") or {}
-    return {"active": bool(prem.get("active")), "plan": prem.get("product_id") or "free"}
+    plan = "free"
+    active = False
+    if doc:
+        prem = doc.get("premium") or {}
+        active = bool(prem.get("active"))
+        plan = prem.get("product_id") or "free"
+
+        # ponytail: the webhook writes expires_at_ms and nothing ever read it, so one
+        # dropped EXPIRATION meant premium forever. Belt and braces on top of the
+        # webhook, not instead of it.
+        # The lifetime tier has NO expires_at_ms — absent must mean "never expires",
+        # never "expired at epoch 0".
+        expires_ms = prem.get("expires_at_ms")
+        if active and expires_ms:
+            if float(expires_ms) < now_ms:
+                active = False
+
+    if active:
+        return {"active": True, "plan": plan}
+
+    # No active paid entitlement — check for a redeemed, unexpired voucher.
+    voucher = await db.vouchers.find_one({"redeemed_by": user_id}, {"_id": 0})
+    if voucher:
+        v_expires = voucher.get("expires_at_ms")
+        if v_expires is None or float(v_expires) >= now_ms:
+            return {"active": True, "plan": "voucher"}
+
+    return {"active": False, "plan": plan}
 
 
 async def check_rate(owner_id: str, kind: str, cap: int) -> Tuple[bool, int]:
@@ -287,6 +339,32 @@ async def _llm_json(session_id: str, system: str, user_text: str, deep: bool = F
         raise HTTPException(status_code=502, detail="AI returned an unusable response — please try again.")
 
 
+# ---------- Safety ----------
+
+# ponytail: append-only, never routes. A false positive costs one extra sentence
+# at the end of a kind message, so the failure direction is harmless by construction.
+# Anchored to disclosure phrasings: "killing me", "dying under this deadline" and
+# "this project is murder" must NOT match. Ceiling: no paraphrase or metaphor is
+# caught. This backstops the model, it does not replace it.
+SELF_HARM_RE = re.compile(
+    r"\bkill (?:myself|me now)\b|\bend (?:my life|it all)\b|\bwant to die\b|"
+    r"\bsuicide\b|\bsuicidal\b|\bkilling myself\b|\bnot worth living\b|\bhurt myself\b",
+    re.I,
+)
+
+REFERRAL = (
+    "I care that you told me. Please reach a real person - "
+    "988 (US), 116 123 (UK), or NCMH 1553 (PH)."
+)
+
+
+def ensure_referral(reply: str, user_text: str) -> str:
+    """Guarantee the referral when a disclosure is present. The prompt asks, this enforces."""
+    if SELF_HARM_RE.search(user_text or "") and "988" not in reply:
+        return reply.rstrip(". ") + ". " + REFERRAL
+    return reply
+
+
 # ---------- Health ----------
 
 @api.get("/")
@@ -295,6 +373,17 @@ async def root():
 
 
 # ---------- Auth endpoints ----------
+
+async def migrate_device_data(device_id: Optional[str], user_id: str):
+    """Reassign anonymous device-owned rows to the signed-in user. Shared by both
+    auth paths — two inline copies would drift. rate_counters is deliberately NOT
+    migrated: caps are per-day per-owner, and resetting on sign-in hands out a free day."""
+    if not device_id:
+        return
+    old = f"dev:{device_id}"
+    for coll in (db.tasks, db.steps, db.activity, db.room_messages):
+        await coll.update_many({"owner": old}, {"$set": {"owner": user_id}})
+
 
 @api.post("/auth/session")
 async def auth_session(payload: SessionExchangeRequest):
@@ -343,18 +432,97 @@ async def auth_session(payload: SessionExchangeRequest):
     )
 
     # Migrate device data → user_id
-    if payload.device_id:
-        old = f"dev:{payload.device_id}"
-        await db.tasks.update_many({"owner": old}, {"$set": {"owner": user_id}})
-        await db.steps.update_many({"owner": old}, {"$set": {"owner": user_id}})
-        await db.activity.update_many({"owner": old}, {"$set": {"owner": user_id}})
-        await db.room_messages.update_many({"owner": old}, {"$set": {"owner": user_id}})
+    await migrate_device_data(payload.device_id, user_id)
 
     return {
         "user_id": user_id,
         "email": email,
         "name": name,
         "picture": picture,
+        "session_token": server_token,
+        "expires_at": expires_at.isoformat(),
+    }
+
+
+@api.post("/auth/apple")
+async def auth_apple(payload: AppleAuthRequest):
+    """Sign in with Apple. We verify Apple's identity_token signature/claims and mint
+    our OWN session (Apple tokens are never stored — see task-4-brief). Keys on Apple's
+    `sub`, never email: Apple returns email only on the first authorization."""
+    try:
+        signing_key = _apple_jwks.get_signing_key_from_jwt(payload.identity_token)
+        claims = jwt.decode(
+            payload.identity_token,
+            signing_key.key,
+            algorithms=["RS256"],
+            audience=APPLE_BUNDLE_ID,
+            issuer=APPLE_ISSUER,
+        )  # exp/iat verified by default
+    except jwt.PyJWTError:
+        # NEVER a bare Exception here — that is how a skipped signature check hides.
+        raise HTTPException(401, "invalid Apple identity token")
+
+    sub = claims.get("sub")
+    if not sub:
+        raise HTTPException(401, "invalid Apple identity token")
+
+    email = claims.get("email")  # first authorization only
+    ev = claims.get("email_verified")
+    email_verified = ev is True or ev == "true"  # Apple sends bool true OR string "true"
+
+    existing = await db.users.find_one({"apple_sub": sub}, {"_id": 0})
+    if existing:
+        user_id = existing["user_id"]
+        # full_name arrives on first auth only; never overwrite an existing name with None.
+        if payload.full_name:
+            await db.users.update_one({"user_id": user_id}, {"$set": {"name": payload.full_name}})
+    else:
+        # Merge onto an existing user ONLY when the email is present AND verified —
+        # entitlements key on user_id, so forking strands a paid subscription; and an
+        # unverified email must never merge (account-linking takeover).
+        merged = await db.users.find_one({"email": email}, {"_id": 0}) if (email and email_verified) else None
+        if merged:
+            user_id = merged["user_id"]
+            updates = {"apple_sub": sub}
+            if payload.full_name and not merged.get("name"):
+                updates["name"] = payload.full_name
+            await db.users.update_one({"user_id": user_id}, {"$set": updates})
+        else:
+            user_id = f"user_{uuid.uuid4().hex[:12]}"
+            doc = {
+                "user_id": user_id,
+                "apple_sub": sub,
+                "name": payload.full_name or (email.split("@")[0] if (email and email_verified) else "there"),
+                "picture": None,
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            }
+            # Store email ONLY when present AND verified. OMIT the key otherwise —
+            # never email: None. An unverified email is untrusted: keying or storing
+            # it lets an attacker's Apple account squat a stranger's real address, and
+            # an unverified address matching an existing user would collide on the
+            # partial-unique email index (that user already owns it).
+            if email and email_verified:
+                doc["email"] = email
+            await db.users.insert_one(doc)
+
+    # Mint our own session — the Emergent path reuses Emergent's token, this path can't.
+    server_token = secrets.token_urlsafe(32)
+    expires_at = datetime.now(timezone.utc) + timedelta(days=7)
+    await db.user_sessions.insert_one({
+        "session_token": server_token,
+        "user_id": user_id,
+        "expires_at": expires_at,  # native datetime — the TTL index depends on it
+        "created_at": datetime.now(timezone.utc),
+    })
+
+    await migrate_device_data(payload.device_id, user_id)
+
+    user = await db.users.find_one({"user_id": user_id}, {"_id": 0})
+    return {
+        "user_id": user_id,
+        "email": user.get("email", ""),
+        "name": user.get("name", ""),
+        "picture": user.get("picture"),
         "session_token": server_token,
         "expires_at": expires_at.isoformat(),
     }
@@ -371,6 +539,50 @@ async def auth_logout(authorization: Optional[str] = Header(default=None)):
         token = authorization.split(" ", 1)[1].strip()
         await db.user_sessions.delete_one({"session_token": token})
     return {"ok": True}
+
+
+OWNER_COLLECTIONS = ("tasks", "steps", "activity", "room_messages", "rate_counters")
+USER_ID_COLLECTIONS = ("entitlements", "user_sessions")   # `users` deleted last, separately
+# webhook_events: keyed on event_id only. No person key, unreachable per-user.
+#   Holds event_id + a timestamp (:465-468) — the RC payload is never stored.
+#   No PII, nothing to delete. Deliberate, not an oversight.
+
+
+@api.delete("/account")
+async def delete_account(
+    user: UserProfile = Depends(require_user),
+    x_device_id: Optional[str] = Header(default=None),
+):
+    """Apple 5.1.1(v): accounts must be deletable. require_user, not
+    resolve_owner — deletion must never be reachable by device id alone.
+
+    Accepted risk: an unproven device_id claim lets a caller delete another
+    device's anonymous rows. Same trust level as the migration at :377,
+    already logged as post-launch. Refusing the header would leave real PII
+    (tasks, braindumps, Room transcripts) behind under dev:<id>, which is worse.
+    """
+    uid = user.user_id
+    owners = [uid] + ([f"dev:{x_device_id}"] if x_device_id else [])
+    deleted = {}
+    try:
+        for name in OWNER_COLLECTIONS:
+            deleted[name] = (await db[name].delete_many({"owner": {"$in": owners}})).deleted_count
+        for name in USER_ID_COLLECTIONS:
+            deleted[name] = (await db[name].delete_many({"user_id": uid})).deleted_count
+        # vouchers: keyed on `redeemed_by`, a THIRD key (neither owner nor user_id) —
+        # one doc per CODE, not per person, so it cannot join the loops above. Burn,
+        # don't release: deleting the doc removes the PII (redeemed_by) AND makes the
+        # code permanently unredeemable (unknown code, 404) in one call. Clearing
+        # redeemed_by back to None instead would put the code back in play — the same
+        # person (or anyone who still has the code) could redeem, delete, and
+        # re-redeem it forever, defeating the whole point of a bounded giveaway.
+        deleted["vouchers"] = (await db.vouchers.delete_many({"redeemed_by": uid})).deleted_count
+        deleted["users"] = (await db.users.delete_many({"user_id": uid})).deleted_count
+    except Exception:
+        logger.exception("account delete partial user_id=%s deleted=%s", uid, deleted)
+        raise HTTPException(500, "delete didn't finish. please try again.")
+    logger.info("account deleted user_id=%s deleted=%s", uid, deleted)
+    return {"ok": True, "deleted": deleted}
 
 
 # ---------- Entitlement ----------
@@ -394,6 +606,76 @@ async def me_access(who=Depends(resolve_owner)):
     )
 
 
+# ---------- Vouchers ----------
+# db.vouchers: ONE doc per CODE, not per redemption. Minted by scripts/mint_vouchers.py
+# (no admin HTTP endpoint — adding a privileged route days before submission is a new
+# attack surface for no benefit). Never writes into db.entitlements: that document is
+# the RevenueCat webhook's row, and a voucher write there could be stomped by a later
+# RC event (or stomp one). Different lifecycle, different source of truth, no shared row.
+
+VOUCHER_ATTEMPTS_CAP = 10  # per user per day — without this the endpoint is a free
+                           # brute-force oracle over the code space.
+
+
+class VoucherRedeem(BaseModel):
+    code: str = Field(max_length=64)
+
+
+class VoucherRedeemResponse(BaseModel):
+    ok: bool
+    plan: str
+    expires_at_ms: Optional[int] = None
+
+
+def _normalize_voucher_code(raw: str) -> str:
+    """Uppercase, strip whitespace and dashes — 'otter xxxx xxxx' must find 'OTTERXXXXXXXX'.
+    Codes are stored normalised (no dashes); mint_vouchers.py prints the dashed,
+    human-readable form but writes this form to the db."""
+    return re.sub(r"[\s\-]+", "", raw or "").upper()
+
+
+@api.post("/vouchers/redeem", response_model=VoucherRedeemResponse)
+async def redeem_voucher(payload: VoucherRedeem, user: UserProfile = Depends(require_user)):
+    """require_user, never resolve_owner — a grant must attach to a real account,
+    not a device."""
+    allowed, _ = await check_rate(user.user_id, "voucher", VOUCHER_ATTEMPTS_CAP)
+    if not allowed:
+        raise HTTPException(429, "too many code attempts today. try again tomorrow.")
+    await bump_rate(user.user_id, "voucher")
+
+    code = _normalize_voucher_code(payload.code)
+    doc = await db.vouchers.find_one({"code": code}, {"_id": 0})
+    if not doc:
+        raise HTTPException(404, "we don't recognize that code. check it and try again.")
+
+    now_ms = datetime.now(timezone.utc).timestamp() * 1000
+    expires_ms = doc.get("expires_at_ms")
+    if expires_ms and float(expires_ms) < now_ms:
+        raise HTTPException(410, "this code has expired.")
+
+    if doc.get("redeemed_by") == user.user_id:
+        return VoucherRedeemResponse(ok=True, plan="voucher", expires_at_ms=expires_ms)
+
+    # Atomic test-and-set. A find-then-write (check redeemed_by is None, then
+    # unconditionally set it) leaves a race window: two concurrent redemptions can
+    # both read None before either writes, and both would then succeed. Gating the
+    # WRITE itself on {"redeemed_by": None} makes MongoDB the referee — only one
+    # update_one can match, the other gets modified_count == 0. This filter, not the
+    # read above, is the actual lock. It also doubles as the "already redeemed by
+    # someone else" check, since that case fails to match for the same reason.
+    result = await db.vouchers.update_one(
+        {"code": code, "redeemed_by": None},
+        {"$set": {
+            "redeemed_by": user.user_id,
+            "redeemed_at": datetime.now(timezone.utc).isoformat(),
+        }},
+    )
+    if result.modified_count == 0:
+        raise HTTPException(409, "this code has already been used.")
+
+    return VoucherRedeemResponse(ok=True, plan="voucher", expires_at_ms=expires_ms)
+
+
 # ---------- RevenueCat webhook ----------
 
 def _verify_rc_signature(raw_body: bytes, header: Optional[str]) -> bool:
@@ -409,6 +691,43 @@ def _verify_rc_signature(raw_body: bytes, header: Optional[str]) -> bool:
     signed = f"{ts}.".encode() + raw_body
     digest = hmac.new(REVENUECAT_WEBHOOK_SECRET.encode(), signed, hashlib.sha256).hexdigest()
     return hmac.compare_digest(digest, v1)
+
+
+# ponytail: pure and separately tested. Returns True (grant), False (revoke), or
+# None (this event says nothing about entitlement, leave the stored value alone).
+#
+# The old classifier ended in `else: is_active = event_type in active_types` and
+# then ran the upsert unconditionally, so BILLING_ISSUE, TRANSFER,
+# SUBSCRIPTION_PAUSED and every event RevenueCat ships in future all resolved to
+# False and switched premium OFF for people who had paid. Unknown must mean
+# "don't touch", never "revoke".
+GRANT_EVENTS = {
+    "INITIAL_PURCHASE",
+    "RENEWAL",
+    "UNCANCELLATION",
+    "PRODUCT_CHANGE",
+    "NON_RENEWING_PURCHASE",  # the lifetime tier
+    "CANCELLATION",  # cancelled, but paid through the current period
+}
+REVOKE_EVENTS = {"EXPIRATION"}  # the only event that legitimately ends access
+
+
+def classify_event(event_type: str) -> Optional[bool]:
+    """True = grant, False = revoke, None = leave `active` untouched.
+
+    BILLING_ISSUE and SUBSCRIPTION_PAUSED deliberately return None: RevenueCat's
+    grace period is authoritative and a card hiccup is not an expiry. TRANSFER
+    returns None because there is no correct automatic behaviour without a second
+    identity, and revoking is strictly worse than doing nothing.
+    """
+    if event_type in REVOKE_EVENTS:
+        return False
+    if event_type in GRANT_EVENTS:
+        return True
+    return None
+
+
+# ---------- RevenueCat webhook END ----------
 
 
 @api.post("/webhooks/revenuecat")
@@ -440,28 +759,30 @@ async def revenuecat_webhook(request: Request):
     if not user_id:
         return {"ok": True, "no_user": True}
     event_type = event.get("type", "")
+    is_active = classify_event(event_type)
 
-    active_types = {"INITIAL_PURCHASE", "RENEWAL", "UNCANCELLATION", "PRODUCT_CHANGE", "NON_RENEWING_PURCHASE"}
-    if event_type == "EXPIRATION":
-        is_active = False
-    elif event_type == "CANCELLATION":
-        is_active = True  # still active until expiration
+    # Metadata is always worth recording. `active` is only touched when the event
+    # actually says something about it, so an unknown type can never revoke.
+    fields = {
+        "premium.last_event_id": event_id,
+        "premium.updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    for key, value in (
+        ("premium.product_id", event.get("product_id")),
+        ("premium.expires_at_ms", event.get("expiration_at_ms")),
+        ("premium.entitlements", event.get("entitlement_ids")),
+    ):
+        # Never blank a known value because an unrelated event omitted it.
+        if value is not None:
+            fields[key] = value
+
+    if is_active is None:
+        logger.info("rc webhook: %s leaves entitlement untouched for %s", event_type or "<empty>", user_id)
     else:
-        is_active = event_type in active_types
+        fields["premium.active"] = is_active
 
-    await db.entitlements.update_one(
-        {"user_id": user_id},
-        {"$set": {
-            "premium.active": is_active,
-            "premium.product_id": event.get("product_id"),
-            "premium.expires_at_ms": event.get("expiration_at_ms"),
-            "premium.last_event_id": event_id,
-            "premium.entitlements": event.get("entitlement_ids") or [],
-            "premium.updated_at": datetime.now(timezone.utc).isoformat(),
-        }},
-        upsert=True,
-    )
-    return {"ok": True}
+    await db.entitlements.update_one({"user_id": user_id}, {"$set": fields}, upsert=True)
+    return {"ok": True, "active_changed": is_active is not None}
 
 
 # ---------- Task endpoints ----------
@@ -500,19 +821,103 @@ async def list_steps(task_id: str, who=Depends(resolve_owner)):
 
 # ---------- Shrink ----------
 
+# ponytail: denylist of ABSTRACT verbs, not an allowlist of physical ones.
+# The physical-verb space is open and huge (mail/water/vacuum/chop/iron/mop...).
+# The planning-verb space is small and closed. Measured: a 90-word physical
+# allowlist false-rejected 18/18 real chore steps. This list false-rejects 0/23.
+# Ceiling: cannot catch scope ("Write the report" passes). Upgrade = a classifier.
+ABSTRACT_VERBS = {
+    "plan", "figure", "think", "decide", "consider", "brainstorm", "organize",
+    "research", "identify", "clarify", "assess", "determine", "evaluate",
+    "ascertain", "map", "outline", "strategize", "understand", "define",
+    "explore", "reflect", "conceptualize", "ideate",
+}
+# No English imperative starts with these, so this is the verb-first check a denylist can express.
+NON_IMPERATIVE = {"the", "your", "a", "an", "it", "this", "that", "you", "there", "its", "my", "i", "we"}
+# Physical verb + abstract particle. The verb is fine, the idiom is not.
+VAGUE_IDIOM = ("sort out", "get started", "run through", "check in on", "go over")
+
+# ponytail: anchored. Unanchored \bfinally\b ate "Type the finally block" (try/finally)
+# and \bjust\s+\w+ ate "Open the Just Eat app". Shame shames sentence-initially.
+SHAME_RE = re.compile(
+    r"^just\s+\w+|^simply\b|^finally\b|^at last\b|all you have to do|"
+    r"should(?:'ve| have)\b|shouldn't have|why didn't you|\bobviously\b|it's easy|"
+    r"you have been avoiding|been putting (?:this|it) off|you neglected",
+    re.I,
+)
+
+# ponytail: minute ceilings are a product guess, not a research finding. Tune on completion data.
+MAX_MINUTES = {"activation": 5, "easy": 5, "medium": 10, "hard": 25}
+LADDER = [1, 2, 5, 10, 25]
+
+
+def _clamp_minutes(minutes: int, bucket: str) -> int:
+    """Asymmetric: over-ceiling never reaches here, it is a `problem` instead.
+    Under-labeling is harmless. Over-labeling makes a frozen user fail against a
+    promise the app invented."""
+    allowed = [x for x in LADDER if x <= MAX_MINUTES[bucket]]
+    return min(allowed, key=lambda x: abs(x - minutes))
+
+
+def _norm(t: str) -> str:
+    return re.sub(r"[^a-z0-9 ]", "", t.lower()).strip()
+
+
+def _validate_steps(raw_steps: list, difficulty: str) -> Tuple[List[dict], List[str]]:
+    """Returns (clean, problems). Never raises. Caller inserts clean only.
+    Enforces grammar, shape and honest labels. Does NOT enforce scope."""
+    clean: List[dict] = []
+    problems: List[str] = []
+    seen = set()
+    for i, s in enumerate(raw_steps[:12]):
+        text = str(s.get("text", "")).strip()
+        if not text:
+            continue
+        n = _norm(text)
+        first = n.split(" ")[0] if n else ""
+        bucket = "activation" if i == 0 else difficulty  # keyed on i, NOT len(clean)
+        want = int(s.get("minutes") or 10)
+
+        if first in NON_IMPERATIVE:
+            problems.append(f'step {i+1} "{text}" is not an instruction, start with a verb')
+        elif first in ABSTRACT_VERBS:
+            problems.append(f'step {i+1} "{text}" starts with "{first}", name a physical action')
+        elif any(p in n for p in VAGUE_IDIOM):
+            problems.append(f'step {i+1} "{text}" is vague, name the physical action')
+        elif len(n.split()) > 10:
+            problems.append(f'step {i+1} "{text}" is too long or chains actions')
+        elif n in seen:
+            problems.append(f'step {i+1} "{text}" duplicates an earlier step')
+        elif SHAME_RE.search(text):
+            problems.append(f'step {i+1} "{text}" carries shame language')
+        elif want > MAX_MINUTES[bucket]:
+            problems.append(f'step {i+1} "{text}" needs {want} min, must fit under {MAX_MINUTES[bucket]} min')
+        else:
+            seen.add(n)
+            clean.append({"text": text, "minutes": _clamp_minutes(want, bucket)})
+
+    if not clean and not problems:
+        problems.append("return 2 to 6 concrete steps")
+    return clean, problems
+
+
 SHRINK_SYSTEM = """You are Otterly, a calm ADHD-friendly companion. You help people with ADHD start tasks by breaking them into tiny concrete micro-steps.
 
 Rules:
 - Return STRICT JSON only. No prose, no fenced code.
-- 3 to 10 micro-steps. Fewer is better if the task allows.
-- Each step MUST be a single concrete physical action that takes 5 to 25 minutes.
-- Steps must start with a verb ("Open", "Walk to", "Type", "Send").
-- Never generic ("plan it out"). Always concrete ("Open Gmail and start a draft to Jane").
-- Tone: warm, non-shame, brief. Never mention how the user 'should' have done this earlier.
-- For difficulty "easy": more steps, smaller (5 min each). For "medium": mid (10 min). For "hard": fewer/bigger steps (up to 25 min).
+- 2 to 6 micro-steps. Fewer is better if the task allows. Never pad a small task.
+- Step 1 is the activation step: one physical movement or app-open, under 5 minutes, requiring zero decisions. It exists to get the body moving, not to make progress.
+- Every other step is a single concrete physical action.
+- Steps start with a physical verb ("Open", "Walk to", "Type", "Send"). Never "The", "Your", "It".
+- One action per step. Never two joined by "and", "then", or a comma chain. Keep each step under 10 words.
+- Never generic ("plan it out", "figure out the intro", "sort out the receipts"). Always concrete ("Open Gmail").
+- Never a duplicate of another step.
+- Give each step an HONEST minute estimate. Do not shrink the number to fit a limit. If the work is 25 minutes, say 25 and make the step smaller instead.
+- Tone: warm, brief, no shame. Never mention how the user 'should' have done this earlier. Never open a step with "Just", "Simply", or "Finally".
+- Step size for steps 2 and up: "easy" = under 5 min each. "medium" = under 10 min. "hard" = under 25 min. This never applies to step 1.
 
 Return JSON shape:
-{"steps": [{"text": "...", "minutes": 5}]}
+{"steps": [{"text": "Open the doc", "minutes": 2}, {"text": "Type the first paragraph", "minutes": 10}]}
 """
 
 
@@ -535,10 +940,22 @@ async def shrink_task(task_id: str, payload: ShrinkRequest, who=Depends(resolve_
         raise HTTPException(404, "task not found")
     task = Task(**{k: v for k, v in task_doc.items() if k != "owner"})
 
+    # ponytail: re-shrink destroys finished steps. Checked BEFORE the LLM call so a
+    # refusal costs no API call and no free-tier shrink. db.activity survives either
+    # way, so the streak already counted work the user is about to stop seeing.
+    done_count = await db.steps.count_documents({"task_id": task_id, "owner": owner_id, "done": True})
+    if done_count and not payload.force:
+        plural = "" if done_count == 1 else "s"
+        raise HTTPException(409, f"{done_count} finished step{plural} would be lost")
+
     prompt = f"Task: {task.title}\n"
     if task.note:
         prompt += f"Note: {task.note}\n"
-    prompt += f"Difficulty preference: {payload.difficulty}\n\nReturn JSON."
+    prompt += f"Difficulty preference: {payload.difficulty}\n"
+    if payload.too_big:
+        # The clamp changes the number. Only the prompt changes the work.
+        prompt += "The last steps were too big for this person. Return smaller first actions, not smaller estimates.\n"
+    prompt += "\nReturn JSON."
 
     data = await _llm_json(
         f"shrink-{task_id}-{uuid.uuid4()}",
@@ -547,24 +964,33 @@ async def shrink_task(task_id: str, payload: ShrinkRequest, who=Depends(resolve_
         deep=payload.deep,
     )
 
-    raw_steps = data.get("steps") or []
-    if not raw_steps:
-        raise HTTPException(502, "AI returned no steps")
+    clean, problems = _validate_steps(data.get("steps") or [], payload.difficulty)
+
+    if problems:
+        # ponytail: exactly one repair, and its failure is not the user's problem.
+        try:
+            data = await _llm_json(
+                f"shrink-{task_id}-{uuid.uuid4()}",
+                SHRINK_SYSTEM,
+                prompt + "\n\nYour last answer had problems:\n- " + "\n- ".join(problems)
+                + "\nReturn corrected JSON.",
+                deep=payload.deep,
+            )
+            repaired, _ = _validate_steps(data.get("steps") or [], payload.difficulty)
+            if len(repaired) >= len(clean):
+                clean = repaired
+        except Exception as e:
+            logger.warning("shrink repair failed, keeping %d survivors: %s", len(clean), e)
+
+    # Never hard-fail when good steps exist. 502 only when nothing survived.
+    if not clean:
+        raise HTTPException(502, "AI returned no usable steps")
 
     await db.steps.delete_many({"task_id": task_id, "owner": owner_id})
 
-    steps: List[Step] = []
-    for i, s in enumerate(raw_steps[:12]):
-        minutes = int(s.get("minutes") or 10)
-        minutes = min([5, 10, 25], key=lambda x: abs(x - minutes))
-        step = Step(task_id=task_id, order=i, text=str(s.get("text", "")).strip(), minutes=minutes)
-        if step.text:
-            steps.append(step)
-
-    if steps:
-        docs = [{**s.dict(), "owner": owner_id} for s in steps]
-        await db.steps.insert_many(docs)
-        await db.tasks.update_one({"id": task_id, "owner": owner_id}, {"$set": {"shrunk": True, "difficulty": payload.difficulty}})
+    steps: List[Step] = [Step(task_id=task_id, order=i, **c) for i, c in enumerate(clean)]
+    await db.steps.insert_many([{**s.dict(), "owner": owner_id} for s in steps])
+    await db.tasks.update_one({"id": task_id, "owner": owner_id}, {"$set": {"shrunk": True, "difficulty": payload.difficulty}})
 
     if not ent["active"]:
         await bump_rate(owner_id, "shrink")
@@ -637,12 +1063,14 @@ async def next_action(payload: NextRequest, who=Depends(resolve_owner)):
         f"Available minutes: {payload.minutes or 'unspecified'}\n\n"
         f"Undone micro-steps:\n" + "\n".join(lines) + "\n\nReturn JSON."
     )
-    data = await _llm_json("next-" + str(uuid.uuid4()), NEXT_SYSTEM, user_text)
+    try:
+        data = await _llm_json("next-" + str(uuid.uuid4()), NEXT_SYSTEM, user_text)
+    except Exception as e:
+        logger.warning("next_action LLM failed, falling back: %s", e)
+        data = {}
+
     step_id = data.get("step_id")
     reason = str(data.get("reason", "")).strip() or "This one's small enough to start."
-
-    if not step_id:
-        return NextResponse(empty=True, reason=reason)
 
     step_doc = next((s for s in candidates if s["id"] == step_id), None)
     if not step_doc:
@@ -689,7 +1117,8 @@ async def braindump(payload: BraindumpRequest, who=Depends(resolve_owner)):
     if not ent["active"]:
         await bump_rate(owner_id, "braindump")
 
-    return BraindumpResponse(tasks=tasks[:12])
+    referral = REFERRAL if SELF_HARM_RE.search(payload.text) else None
+    return BraindumpResponse(tasks=tasks[:12], referral=referral)
 
 
 # ---------- Voice transcribe ----------
@@ -707,6 +1136,9 @@ async def transcribe(audio: UploadFile = File(...), who=Depends(resolve_owner)):
         allowed, _ = await check_rate(owner_id, "transcribe", 5)
         if not allowed:
             raise HTTPException(429, "free tier: 5 voice notes/day. upgrade for unlimited.")
+
+    if audio.size and audio.size > 25 * 1024 * 1024:
+        raise HTTPException(413, "audio too large (25MB max)")
 
     audio_bytes = await audio.read()
     if not audio_bytes:
@@ -773,7 +1205,7 @@ async def room_message(payload: RoomMessage, who=Depends(resolve_owner)):
     if payload.goal and len(history) <= 2:
         prompt = f"(User goal for this session: {payload.goal})\n\n{payload.text}"
     reply = await chat.send_message(UserMessage(text=prompt))
-    reply_text = (reply or "").strip()
+    reply_text = ensure_referral((reply or "").strip(), payload.text)
 
     otter_doc = RoomMessageDoc(session_id=payload.session_id, role="otter", text=reply_text)
     await db.room_messages.insert_one({**otter_doc.dict(), "owner": owner_id})
@@ -826,23 +1258,60 @@ app.add_middleware(
 )
 
 
+# Task 3: db.users.email is moving from a plain-unique index to a partial-unique
+# one (Apple users can have no email). A plain unique index treats missing/null as
+# a value, so two null emails would collide — partial only indexes docs where
+# email is an actual string. This spec list drives _startup_indexes: EVERY index
+# gets its own try/except so one conflict (e.g. the old email_1 vs. the new partial
+# version) can never silently cascade and take out unrelated indexes below it. Proven
+# against a real mongod (see task-3-report.md): the old single-try version lost the
+# session_token uniqueness, the expires_at TTL, rate_counters uniqueness, and
+# webhook_events idempotency on exactly this conflict. Preserve every index's
+# meaning exactly when editing this list — only how failures are contained changed.
+INDEX_SPECS = [
+    ("users", "email", dict(unique=True, partialFilterExpression={"email": {"$type": "string"}})),
+    ("users", "apple_sub", dict(unique=True, sparse=True)),
+    ("users", "user_id", dict(unique=True)),
+    ("user_sessions", "session_token", dict(unique=True)),
+    ("user_sessions", "user_id", dict()),
+    ("user_sessions", "expires_at", dict(expireAfterSeconds=0)),
+    ("tasks", [("owner", 1), ("created_at", -1)], dict()),
+    ("steps", [("owner", 1), ("task_id", 1), ("order", 1)], dict()),
+    ("activity", [("owner", 1), ("date", 1)], dict()),
+    ("rate_counters", [("owner", 1), ("kind", 1), ("date", 1)], dict(unique=True)),
+    ("webhook_events", "event_id", dict(unique=True)),
+    ("entitlements", "user_id", dict(unique=True)),
+    ("room_messages", [("owner", 1), ("session_id", 1), ("created_at", 1)], dict()),
+    ("vouchers", "code", dict(unique=True)),
+    ("vouchers", "redeemed_by", dict()),
+]
+
+
 @app.on_event("startup")
 async def _startup_indexes():
+    # One-time migration off the plain-unique email index. Mongo names an index
+    # from its key shape by default, so the OLD plain-unique index and the NEW
+    # partial one are both "email_1" — create_index alone can't replace one with
+    # the other (IndexKeySpecsConflict), it has to be dropped first. Gated on the
+    # existing index actually lacking the partial filter so this only fires once:
+    # an unconditional drop would tear down and rebuild the live unique index on
+    # EVERY boot, which is its own version of the bomb this task fixes (a brief
+    # window with no uniqueness guarantee, and a failed rebuild silently swallowed
+    # like every other index below). ISOLATED try/except regardless: drop_index
+    # still raises OperationFailure on a fresh db with no email_1 at all, and that
+    # must never cascade into the loop below.
     try:
-        await db.users.create_index("email", unique=True)
-        await db.users.create_index("user_id", unique=True)
-        await db.user_sessions.create_index("session_token", unique=True)
-        await db.user_sessions.create_index("user_id")
-        await db.user_sessions.create_index("expires_at", expireAfterSeconds=0)
-        await db.tasks.create_index([("owner", 1), ("created_at", -1)])
-        await db.steps.create_index([("owner", 1), ("task_id", 1), ("order", 1)])
-        await db.activity.create_index([("owner", 1), ("date", 1)])
-        await db.rate_counters.create_index([("owner", 1), ("kind", 1), ("date", 1)], unique=True)
-        await db.webhook_events.create_index("event_id", unique=True)
-        await db.entitlements.create_index("user_id", unique=True)
-        await db.room_messages.create_index([("owner", 1), ("session_id", 1), ("created_at", 1)])
-    except Exception as e:
-        logger.warning("index creation warning: %s", e)
+        existing = (await db.users.index_information()).get("email_1")
+        if existing and "partialFilterExpression" not in existing:
+            await db.users.drop_index("email_1")
+    except Exception:
+        pass
+
+    for coll, keys, opts in INDEX_SPECS:
+        try:
+            await db[coll].create_index(keys, **opts)
+        except Exception as e:
+            logger.warning("index %s on %s failed: %s", keys, coll, e)
 
 
 @app.on_event("shutdown")

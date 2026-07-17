@@ -17,11 +17,16 @@ SplashScreen.preventAutoHideAsync();
 initSentry();
 
 function RevenueCatBootstrap() {
-  const { user } = useAuth();
+  const { user, status } = useAuth();
   useEffect(() => {
-    revenuecat.initRevenueCat(user?.user_id);
+    // Wait for auth to resolve. This effect used to fire on mount with
+    // user===null while status was still "loading", which configured
+    // RevenueCat against an anonymous id and latched it for the process.
+    // Passing undefined tells identify() we do not know yet, so it no-ops.
+    if (status === "loading") return;
+    revenuecat.identify(user?.user_id ?? null);
     setSentryUser(user?.user_id ?? null);
-  }, [user?.user_id]);
+  }, [user?.user_id, status]);
   return null;
 }
 

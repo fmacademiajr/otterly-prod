@@ -1,5 +1,8 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  Alert,
+  Linking,
+  Platform,
   ScrollView,
   StyleSheet,
   Switch,
@@ -11,25 +14,42 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter } from "expo-router";
 import { LogOut, Sparkles, ChevronRight } from "lucide-react-native";
+import * as AppleAuthentication from "expo-apple-authentication";
 
 import { ScreenHeader } from "@/src/components/ScreenHeader";
 import { StreakStrip } from "@/src/components/StreakStrip";
 import { OtterMascot } from "@/src/components/OtterMascot";
-import { api, type StreakStats, type AccessSnapshot } from "@/src/lib/api";
+import { api, ApiError, type StreakStats, type AccessSnapshot } from "@/src/lib/api";
 import { useTheme } from "@/src/theme/ThemeProvider";
 import { fonts, radii, spacing } from "@/src/theme/tokens";
 import { storage } from "@/src/utils/storage";
 import { useAuth } from "@/src/auth/AuthProvider";
 
+// Lives on the marketing site, which is already the app's public face. Apple 5.1.1
+// requires an in-app link to it for any app that collects data, and Otterly collects
+// email, voice, and mental-health-adjacent free text.
+const PRIVACY_URL = "https://getotterly.com/privacy";
+
 export default function YouScreen() {
   const { colors, isDark, mode, setMode } = useTheme();
   const router = useRouter();
-  const { user, status, signIn, signOut } = useAuth();
+  const { user, status, signIn, signInWithApple, signOut, deleteAccount } = useAuth();
   const [stats, setStats] = useState<StreakStats | null>(null);
   const [access, setAccess] = useState<AccessSnapshot | null>(null);
   const [name, setName] = useState("");
   const [reminder, setReminder] = useState("20:00");
   const [loadedFromStorage, setLoadedFromStorage] = useState(false);
+  const [voucherOpen, setVoucherOpen] = useState(false);
+  const [voucherCode, setVoucherCode] = useState("");
+  const [voucherBusy, setVoucherBusy] = useState(false);
+  const [voucherMessage, setVoucherMessage] = useState<{ text: string; ok: boolean } | null>(null);
+  const [appleAvailable, setAppleAvailable] = useState(false);
+  const [signInError, setSignInError] = useState<string | null>(null);
+  const deletingRef = useRef(false);
+
+  useEffect(() => {
+    AppleAuthentication.isAvailableAsync().then(setAppleAvailable);
+  }, []);
 
   const load = useCallback(async () => {
     try {
@@ -53,6 +73,84 @@ export default function YouScreen() {
     if (loadedFromStorage) storage.setItem("otterly.reminderTime", reminder);
   }, [reminder, loadedFromStorage]);
 
+  const handleDeleteAccount = useCallback(async () => {
+    const message =
+      "This removes your tasks, braindumps, and Room chats. It cannot be undone.\n\n" +
+      "Deleting your account does not cancel a subscription. Cancel it in Settings, Apple ID, Subscriptions.\n\n" +
+      "Signed in with Apple? Revoke access in Settings, your name, Sign in with Apple, Otterly.";
+
+    const run = async () => {
+      if (deletingRef.current) return;
+      deletingRef.current = true;
+      try {
+        await deleteAccount();
+        setName("");
+      } catch {
+        const failMsg = "Delete didn't finish. Try again.";
+        if (Platform.OS === "web") window.alert(failMsg);
+        else Alert.alert("Delete didn't finish", "Try again.");
+      } finally {
+        deletingRef.current = false;
+      }
+    };
+
+    if (Platform.OS === "web") {
+      if (window.confirm(`Delete your account?\n\n${message}`)) await run();
+    } else {
+      Alert.alert("Delete your account?", message, [
+        { text: "Cancel", style: "cancel" },
+        { text: "Delete", style: "destructive", onPress: run },
+      ]);
+    }
+  }, [deleteAccount]);
+
+  const handleGoogleSignIn = useCallback(async () => {
+    setSignInError(null);
+    try {
+      await signIn();
+    } catch {
+      setSignInError("Sign in didn't work. Try again.");
+    }
+  }, [signIn]);
+
+  const handleAppleSignIn = useCallback(async () => {
+    setSignInError(null);
+    try {
+      await signInWithApple();
+    } catch {
+      setSignInError("Sign in didn't work. Try again.");
+    }
+  }, [signInWithApple]);
+
+  const handleRedeemVoucher = useCallback(async () => {
+    const code = voucherCode.trim();
+    if (!code || voucherBusy) return;
+    setVoucherBusy(true);
+    setVoucherMessage(null);
+    try {
+      const res = await api.redeemVoucher(code);
+      const until = res.expires_at_ms
+        ? new Date(res.expires_at_ms).toLocaleDateString(undefined, {
+            year: "numeric",
+            month: "long",
+            day: "numeric",
+          })
+        : null;
+      setVoucherMessage({
+        text: until ? `You have Otter Premium until ${until}.` : "You have Otter Premium.",
+        ok: true,
+      });
+      setVoucherCode("");
+      const a = await api.access();
+      setAccess(a);
+    } catch (e) {
+      const detail = e instanceof ApiError ? e.detail : "That didn't work. Try again.";
+      setVoucherMessage({ text: detail, ok: false });
+    } finally {
+      setVoucherBusy(false);
+    }
+  }, [voucherCode, voucherBusy]);
+
   const days = stats?.days_this_week ?? 0;
   const streakLine =
     days === 0 ? "This week is still fresh."
@@ -62,10 +160,15 @@ export default function YouScreen() {
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: colors.background }]} edges={["top"]}>
       <ScrollView contentContainerStyle={{ paddingBottom: spacing.xxl }} showsVerticalScrollIndicator={false}>
-        <ScreenHeader eyebrow="you" title="Your Progress Profile." />
+        <ScreenHeader title={name ? `Hi, ${name}.` : "You."} />
 
         <View style={[styles.streakWrap, { backgroundColor: colors.background }]} testID="streak-strip">
-          <OtterMascot size={110} variant={days >= 5 ? "celebrate" : days >= 1 ? "float" : "sleep"} />
+          {/* The otter's expression may reflect the present session. It may never
+              reflect the user's record. This screen was once titled "Your Progress
+              Profile", and mapping mood to streak count put a sleeping otter on it
+              after a week away. That is guilt contingency, the Finch mechanic this
+              app exists against. At rest, present, always. */}
+          <OtterMascot size={110} variant="float" />
           <View style={{ height: spacing.lg }} />
           <StreakStrip daysActive={days} size={44} />
           <Text style={[styles.streakLine, { color: colors.text, fontFamily: fonts.display }]}>
@@ -100,24 +203,45 @@ export default function YouScreen() {
               </TouchableOpacity>
             </View>
           ) : (
-            <TouchableOpacity
-              testID="signin"
-              onPress={signIn}
-              activeOpacity={0.7}
-              style={[styles.accountCard, { backgroundColor: colors.surface, borderColor: colors.border, flexDirection: "row", alignItems: "center", gap: spacing.md }]}
-            >
-              <View style={[styles.googleBadge, { borderColor: colors.border }]}>
-                <Text style={{ fontFamily: fonts.bodySemibold, fontSize: 18 }}>G</Text>
-              </View>
-              <View style={{ flex: 1 }}>
+            <View style={[styles.accountCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+              <TouchableOpacity
+                testID="signin"
+                onPress={handleGoogleSignIn}
+                activeOpacity={0.7}
+                style={{ flexDirection: "row", alignItems: "center", gap: spacing.md }}
+              >
+                <View style={[styles.googleBadge, { borderColor: colors.border }]}>
+                  <Text style={{ fontFamily: fonts.bodySemibold, fontSize: 18 }}>G</Text>
+                </View>
                 <Text style={{ color: colors.text, fontFamily: fonts.bodySemibold, fontSize: 16 }}>
                   Sign in with Google
                 </Text>
-                <Text style={{ color: colors.textMuted, fontFamily: fonts.body, fontSize: 13, marginTop: 2, lineHeight: 18 }}>
-                  Sync across devices. Required to purchase.
+              </TouchableOpacity>
+
+              {appleAvailable ? (
+                <AppleAuthentication.AppleAuthenticationButton
+                  testID="signin-apple"
+                  buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
+                  buttonStyle={
+                    isDark
+                      ? AppleAuthentication.AppleAuthenticationButtonStyle.WHITE
+                      : AppleAuthentication.AppleAuthenticationButtonStyle.BLACK
+                  }
+                  cornerRadius={radii.md}
+                  style={styles.appleButton}
+                  onPress={handleAppleSignIn}
+                />
+              ) : null}
+
+              <Text style={{ color: colors.textMuted, fontFamily: fonts.body, fontSize: 13, marginTop: spacing.md, lineHeight: 18 }}>
+                Sync across devices. Required to purchase.
+              </Text>
+              {signInError ? (
+                <Text style={{ color: colors.danger, fontFamily: fonts.body, fontSize: 13, marginTop: spacing.sm }}>
+                  {signInError}
                 </Text>
-              </View>
-            </TouchableOpacity>
+              ) : null}
+            </View>
           )}
 
           <TouchableOpacity
@@ -135,7 +259,7 @@ export default function YouScreen() {
             <Sparkles size={18} color={access?.premium ? colors.primary : colors.primary} strokeWidth={1.6} />
             <View style={{ flex: 1, marginLeft: spacing.md }}>
               <Text style={{ color: colors.text, fontFamily: fonts.bodySemibold, fontSize: 16 }}>
-                {access?.premium ? "Otter Premium — active" : "Otter Premium"}
+                {access?.premium ? "Otter Premium: active" : "Otter Premium"}
               </Text>
               <Text style={{ color: colors.textMuted, fontFamily: fonts.body, fontSize: 13, marginTop: 2 }}>
                 {access?.premium
@@ -191,6 +315,107 @@ export default function YouScreen() {
                 thumbColor="#FFFFFF"
               />
             </View>
+            {status === "authed" ? (
+              <>
+                <View style={[styles.divider, { backgroundColor: colors.border }]} />
+                <TouchableOpacity
+                  testID="voucher-toggle"
+                  style={styles.row}
+                  onPress={() => {
+                    setVoucherOpen((v) => !v);
+                    setVoucherMessage(null);
+                  }}
+                >
+                  <Text style={[styles.rowLabel, { color: colors.text, fontFamily: fonts.bodySemibold }]}>
+                    Have a voucher?
+                  </Text>
+                  <ChevronRight
+                    size={18}
+                    color={colors.textSubtle}
+                    strokeWidth={1.4}
+                    style={{ transform: [{ rotate: voucherOpen ? "90deg" : "0deg" }] }}
+                  />
+                </TouchableOpacity>
+                {voucherOpen ? (
+                  <View style={{ paddingHorizontal: spacing.base, paddingBottom: spacing.base }}>
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm }}>
+                      <TextInput
+                        testID="voucher-input"
+                        value={voucherCode}
+                        onChangeText={setVoucherCode}
+                        placeholder="OTTER-XXXX-XXXX"
+                        placeholderTextColor={colors.textSubtle}
+                        autoCapitalize="characters"
+                        autoCorrect={false}
+                        onSubmitEditing={handleRedeemVoucher}
+                        style={[
+                          styles.rowLabel,
+                          {
+                            flex: 1,
+                            color: colors.text,
+                            fontFamily: fonts.numeric,
+                            borderWidth: 1,
+                            borderColor: colors.border,
+                            borderRadius: radii.md,
+                            paddingHorizontal: spacing.sm,
+                            paddingVertical: spacing.sm,
+                          },
+                        ]}
+                      />
+                      <TouchableOpacity
+                        testID="voucher-submit"
+                        onPress={handleRedeemVoucher}
+                        disabled={voucherBusy || !voucherCode.trim()}
+                        style={{ opacity: voucherBusy || !voucherCode.trim() ? 0.5 : 1 }}
+                      >
+                        <Text style={{ color: colors.primary, fontFamily: fonts.bodySemibold, fontSize: 15 }}>
+                          {voucherBusy ? "Checking…" : "Apply"}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                    {voucherMessage ? (
+                      <Text
+                        testID="voucher-message"
+                        style={{
+                          color: voucherMessage.ok ? colors.primary : colors.danger,
+                          fontFamily: fonts.body,
+                          fontSize: 13,
+                          marginTop: spacing.sm,
+                        }}
+                      >
+                        {voucherMessage.text}
+                      </Text>
+                    ) : null}
+                  </View>
+                ) : null}
+                <View style={[styles.divider, { backgroundColor: colors.border }]} />
+                <TouchableOpacity
+                  testID="delete-account"
+                  style={styles.row}
+                  onPress={handleDeleteAccount}
+                >
+                  <Text style={[styles.rowLabel, { color: colors.danger, fontFamily: fonts.bodySemibold }]}>
+                    Delete account
+                  </Text>
+                  <ChevronRight size={18} color={colors.danger} strokeWidth={1.4} />
+                </TouchableOpacity>
+              </>
+            ) : null}
+
+            {/* Outside the authed block on purpose. An anonymous user's braindumps and
+                Room messages still go to a model, so they need the policy just as much
+                as a signed-in one. Apple 5.1.1 gates submission on this link existing. */}
+            <View style={[styles.divider, { backgroundColor: colors.border }]} />
+            <TouchableOpacity
+              testID="privacy-policy"
+              style={styles.row}
+              onPress={() => Linking.openURL(PRIVACY_URL)}
+            >
+              <Text style={[styles.rowLabel, { color: colors.text, fontFamily: fonts.body }]}>
+                Privacy policy
+              </Text>
+              <ChevronRight size={18} color={colors.textSubtle} strokeWidth={1.4} />
+            </TouchableOpacity>
           </View>
 
           <TouchableOpacity
@@ -241,6 +466,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     alignItems: "center",
     justifyContent: "center",
+  },
+  appleButton: {
+    height: 44,
+    marginTop: spacing.md,
   },
   upgradeCard: {
     flexDirection: "row",

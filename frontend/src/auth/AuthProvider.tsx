@@ -2,15 +2,19 @@ import React, { createContext, useCallback, useContext, useEffect, useState } fr
 import { Platform } from "react-native";
 import * as WebBrowser from "expo-web-browser";
 import * as Linking from "expo-linking";
+import * as AppleAuthentication from "expo-apple-authentication";
 
 import { identity, type StoredUser } from "@/src/lib/identity";
 import { api, ApiError } from "@/src/lib/api";
+import { storage } from "@/src/utils/storage";
 
 type AuthCtx = {
   status: "loading" | "authed" | "anonymous";
   user: StoredUser | null;
   signIn: () => Promise<void>;
+  signInWithApple: () => Promise<void>;
   signOut: () => Promise<void>;
+  deleteAccount: () => Promise<void>;
   refresh: () => Promise<void>;
 };
 
@@ -21,6 +25,19 @@ const EMERGENT_AUTH_URL = "https://auth.emergentagent.com/";
 async function processSessionToken(sessionToken: string) {
   const deviceId = await identity.getDeviceId();
   const res = await api.exchangeSession(sessionToken, deviceId);
+  await identity.setToken(res.session_token);
+  await identity.setUser({
+    user_id: res.user_id,
+    email: res.email,
+    name: res.name,
+    picture: res.picture,
+  });
+  return res;
+}
+
+async function processAppleCredential(identityToken: string, fullName?: string) {
+  const deviceId = await identity.getDeviceId();
+  const res = await api.appleAuth(identityToken, deviceId, fullName);
   await identity.setToken(res.session_token);
   await identity.setUser({
     user_id: res.user_id,
@@ -127,6 +144,35 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setStatus("authed");
   }, []);
 
+  const signInWithApple = useCallback(async () => {
+    let credential: AppleAuthentication.AppleAuthenticationCredential;
+    try {
+      credential = await AppleAuthentication.signInAsync({
+        requestedScopes: [
+          AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+          AppleAuthentication.AppleAuthenticationScope.EMAIL,
+        ],
+      });
+    } catch (e: any) {
+      if (e?.code === "ERR_REQUEST_CANCELED") return; // user tapped Cancel, not a failure
+      throw e;
+    }
+    if (!credential.identityToken) return;
+    // fullName is only populated on the user's first authorization; null on repeat sign-ins.
+    const fullName = [credential.fullName?.givenName, credential.fullName?.familyName]
+      .filter(Boolean)
+      .join(" ")
+      .trim();
+    const res = await processAppleCredential(credential.identityToken, fullName || undefined);
+    setUser({
+      user_id: res.user_id,
+      email: res.email,
+      name: res.name,
+      picture: res.picture,
+    });
+    setStatus("authed");
+  }, []);
+
   const signOut = useCallback(async () => {
     try {
       await api.logout();
@@ -137,9 +183,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setStatus("anonymous");
   }, []);
 
+  const deleteAccount = useCallback(async () => {
+    await api.deleteAccount(); // throws → caller shows error, token kept for retry
+    try {
+      await identity.reset();
+      await storage.removeItem("otterly.userName");
+      await storage.removeItem("otterly.reminderTime");
+    } catch {
+      // ponytail: server delete already succeeded here. A local cleanup failure
+      // (e.g. SecureStore throwing) must not read back to the caller as a
+      // delete failure. Fall through to the anonymous state either way.
+    }
+    setUser(null);
+    setStatus("anonymous");
+  }, []);
+
   return (
     <AuthContext.Provider
-      value={{ status, user, signIn, signOut, refresh: bootstrap }}
+      value={{ status, user, signIn, signInWithApple, signOut, deleteAccount, refresh: bootstrap }}
     >
       {children}
     </AuthContext.Provider>

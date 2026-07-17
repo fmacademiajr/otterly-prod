@@ -200,7 +200,7 @@ export default function RoomScreen() {
             testID="room-input"
             value={text}
             onChangeText={setText}
-            placeholder="say anything — or nothing"
+            placeholder="say anything, or nothing"
             placeholderTextColor={colors.textSubtle}
             style={[styles.input, { color: colors.text, fontFamily: fonts.body }]}
             multiline

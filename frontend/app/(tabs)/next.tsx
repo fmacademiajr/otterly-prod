@@ -109,7 +109,7 @@ export default function NextScreen() {
         <View style={styles.headerRow}>
           <View style={{ flex: 1 }}>
             <Text style={[styles.hello, { color: colors.text, fontFamily: fonts.displayBold }]}>
-              Hello,{name ? "\n" + name : ""}
+              Hello,{name ? " " + name : ""}
             </Text>
           </View>
           <OtterMascot size={90} variant="peek" />
@@ -145,9 +145,12 @@ export default function NextScreen() {
             <View style={{ alignItems: "center", marginBottom: spacing.base }}>
               <OtterMascot size={100} variant="sleep" />
             </View>
-            <Text style={[styles.eyebrow, { color: colors.text, fontFamily: fonts.bodySemibold }]}>
-              NOTHING SHRUNK YET
-            </Text>
+            {/* The eyebrow here read "NOTHING SHRUNK YET" in the same caps slot that
+                says "DO THIS NEXT" when a step exists. /next returns empty=True in
+                TWO cases (server.py:809-811): nothing added, and every step finished.
+                So the person who just cleared their list opened the app and was told,
+                in capitals, that they had shrunk nothing. The three lines below already
+                do the job without asserting anything false. */}
             <Text
               style={[styles.taskTitle, { color: colors.text, fontFamily: fonts.displayBold }]}
             >
@@ -230,9 +233,28 @@ export default function NextScreen() {
           style={styles.softExit}
         >
           <Text style={{ color: colors.primary, fontFamily: fonts.body, fontSize: 15 }}>
-            Not this — pick another
+            Not this one. Pick another
           </Text>
         </TouchableOpacity>
+
+        {/* The brief specifies this escape and it was never built. The two exits that
+            shipped both fail the moment it matters: "Not this one" re-rolls at the SAME
+            energy, so the next pick is no smaller, and "Skip for now" drops you into a
+            7-item inbox. Someone frozen on a step they cannot start was offered a
+            re-roll at the same difficulty. NEXT_SYSTEM already instructs the model to
+            pick the shortest step at low energy, so this is real, not theatre.
+            Hidden at low, because the label would be a lie. */}
+        {energy !== "low" ? (
+          <TouchableOpacity
+            testID="next-too-tired"
+            onPress={() => onEnergy("low")}
+            style={styles.softExit}
+          >
+            <Text style={{ color: colors.textMuted, fontFamily: fonts.body, fontSize: 15 }}>
+              I&apos;m too tired for this
+            </Text>
+          </TouchableOpacity>
+        ) : null}
 
         <TouchableOpacity
           testID="next-skip-for-now"
@@ -256,7 +278,11 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "flex-start",
   },
-  hello: { fontSize: 44, lineHeight: 52, letterSpacing: -1 },
+  // The greeting was 44px and the micro-step 26px, so the app rendered its own
+  // salutation 1.7x larger than the one thing it exists to deliver. The brief
+  // calls this screen "80% of the emotional experience" and names the micro-step
+  // the Big Fraunces line. It is now the biggest thing on the screen.
+  hello: { fontSize: 28, lineHeight: 34, letterSpacing: -0.5 },
   card: {
     borderWidth: 1,
     borderRadius: radii.lg,
@@ -270,7 +296,7 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
     marginBottom: spacing.md,
   },
-  taskTitle: { fontSize: 26, lineHeight: 32, marginBottom: spacing.md },
+  taskTitle: { fontSize: 34, lineHeight: 42, marginBottom: spacing.md },
   minutesPill: {
     alignSelf: "flex-start",
     paddingHorizontal: spacing.md,
