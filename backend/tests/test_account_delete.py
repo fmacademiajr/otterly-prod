@@ -8,6 +8,7 @@ reports success. This test exists to catch exactly that.
 Run: cd backend && ./.venv/bin/python tests/test_account_delete.py
 """
 import asyncio
+import re
 import inspect
 import os
 import sys
@@ -42,6 +43,15 @@ def check_maps() -> list:
                 repr(USER_ID_COLLECTIONS)))
     union = set(OWNER_COLLECTIONS) | set(USER_ID_COLLECTIONS) | {"users", "webhook_events"}
     out.append(("union covers all 9 collections, no strays", union == ALL_NINE, repr(union)))
+
+    # ALL_NINE is a hand-written list, so on its own it cannot notice a TENTH
+    # collection added to server.py and mapped nowhere — which is this endpoint's
+    # own themed failure mode, one step removed. Derive the truth from the source
+    # instead. Passes today (server.py touches exactly these 9) and only trips when
+    # someone adds a collection, forcing a conscious map-or-exclude.
+    # `found <= ALL_NINE` is the direction that catches a new one.
+    found = set(re.findall(r"\bdb\.([a-z_]+)\.", src))
+    out.append(("no unmapped collection in server.py", found <= ALL_NINE, repr(found - ALL_NINE)))
     return out
 
 

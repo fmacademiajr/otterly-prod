@@ -7,7 +7,11 @@ import { useTheme } from "@/src/theme/ThemeProvider";
 import { fonts, radii, spacing } from "@/src/theme/tokens";
 import { storage } from "@/src/utils/storage";
 
-const TEAL_DARK = "#2E7268";
+// TEAL_DARK ("#2E7268") lived here and was applied to the wordmark regardless of
+// theme, so the first screen a new user ever sees rendered the product name at
+// 2.97:1 in dark mode. It never consulted isDark, which is why light mode (5.64:1)
+// let it ship unnoticed. colors.primary is the token and gives 6.33:1 on dark.
+// design_guidelines.json:202 says stick strictly to the provided hex codes.
 
 export default function Welcome() {
   const router = useRouter();
@@ -24,7 +28,7 @@ export default function Welcome() {
         <View style={styles.middle}>
           <OtterMascot size={240} variant="wave" />
           <View style={{ height: spacing.xxl }} />
-          <Text style={[styles.title, { color: TEAL_DARK, fontFamily: fonts.displayBold }]}>
+          <Text style={[styles.title, { color: colors.primary, fontFamily: fonts.displayBold }]}>
             Otterly
           </Text>
           <Text style={[styles.subtitle, { color: colors.text, fontFamily: fonts.body }]}>

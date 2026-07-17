@@ -9,7 +9,6 @@ import { fonts, radii, spacing } from "@/src/theme/tokens";
 
 const CRISIS_BG = "#E5EBF1";       // pale blue-gray (light)
 const CRISIS_BG_DARK = "#1F2A34";  // deep blue-gray (dark)
-const CRISIS_OTTER = "#7A98B0";
 
 const LINES = [
   { flag: "🇺🇸", label: "US", number: "988", tel: "988" },
@@ -67,7 +66,10 @@ export default function CrisisScreen() {
                   <Text style={styles.flag}>{l.flag}</Text>
                   <Text
                     style={{
-                      color: colors.text,
+                      // Tinted, because plain text next to a flag reads as a printed
+                      // table. Tint is the native "this dials" signal, and this is the
+                      // one screen where a person must not have to wonder.
+                      color: colors.primary,
                       fontFamily: fonts.bodySemibold,
                       fontSize: 17,
                       marginLeft: spacing.base,

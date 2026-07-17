@@ -33,10 +33,13 @@ export function EnergyPill({
             testID={`energy-${o.key}`}
             onPress={() => onChange(o.key)}
             activeOpacity={0.7}
+            accessibilityRole="radio"
+            accessibilityState={{ selected: active }}
             style={[
               styles.pill,
               active && {
-                backgroundColor: colors.primarySurface,
+                backgroundColor: colors.primarySurfaceStrong,
+                borderColor: colors.primary,
               },
             ]}
           >
@@ -70,6 +73,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.base,
     paddingVertical: spacing.sm,
     borderRadius: radii.pill,
+    // The selected fill was primarySurface on surfaceMuted: 1.04:1 in dark, 1.02:1
+    // in light. Invisible. The energy check-in gates the whole Next pick and tapping
+    // it changed nothing you could see. The border does the work now.
+    // Transparent here, not added on `active`, or the pill grows 2px and shoves its
+    // siblings sideways on every tap.
+    borderWidth: 1,
+    borderColor: "transparent",
   },
   label: {
     fontSize: 14,
