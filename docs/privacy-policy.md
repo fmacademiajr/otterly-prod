@@ -86,12 +86,11 @@ If this policy changes in a way that matters, the app will say so before the cha
 support@getotterly.com
 
 <!--
-FERNANDO — TWO THINGS BEFORE THIS GOES LIVE:
+FERNANDO — STATUS:
 
-1. support@getotterly.com is a placeholder. It must exist and be monitored before
-   submission. App Store Connect requires a working Support URL, and this policy
-   promises deletion-by-email as the fallback when someone cannot open the app.
-   A dead address turns that promise into a false statement.
+1. support@getotterly.com — LIVE as of 2026-07-18. The deletion-by-email promise
+   in this policy is now backed by a real, monitored inbox. App Store Connect also
+   wants this as the Support URL contact.
 
 2. The "training" line — RESOLVED 2026-07-17. Fernando confirmed with Emergent
    that OpenAI and Anthropic do not train on this data, so the claim is stated

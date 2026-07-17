@@ -138,7 +138,7 @@ Being fixed by giving every index its own try/except. **Never add an index to th
 5. **Spend cap on `EMERGENT_LLM_KEY`.** Five minutes and it bounds every abuse finding absolutely. No app code substitutes for it.
 6. **The privacy policy** is written (`docs/privacy-policy.md`) and converted to `privacy.html` on the web repo. The in-app link (Settings → Privacy policy) points at `getotterly.com/privacy`. Two things before it goes public:
    - **Deploy the three web pages.** The homepage was repositioned to lead with task-shrinking, body-doubling moved to its own page, and `privacy.html` is new. Deploy: `cd ~/code/otterly && npx wrangler@3 pages deploy apps/web --project-name otterly-waitlist`. The OAuth token goes stale after weeks, so you may need `npx wrangler@3 login` first. Do NOT test the live waitlist form — every submit writes a real row to the production Resend audience.
-   - `support@getotterly.com` must exist and be monitored. The policy publishes it as a deletion-by-email fallback for anyone who cannot open the app. A dead address makes that a false statement.
+   - `support@getotterly.com` is LIVE (2026-07-18), so the deletion-by-email promise is backed. Use it as the App Store Connect Support URL contact too.
    - (The training claim is RESOLVED — you confirmed with Emergent that OpenAI and Anthropic do not train on this data, and the policy states it plainly. Keep their confirmation in writing; if that contract changes, this is the first line that becomes false.)
 7. **Vouchers**: to hand someone free access, run `cd backend && ./.venv/bin/python scripts/mint_vouchers.py --count 20 --batch press-2026-07 --expires 2027-01-31`. It prints codes. People redeem them in the app under Settings. This needs the backend deployed and its `.env` present.
 8. **Regenerate four art assets** (see §6).
@@ -201,7 +201,7 @@ Three things were additionally verified against a **real mongod**, not just a fa
 | `docs/2026-07-17-shrink-guardrails-spec.md` | Why shrink enforcement is a harness, not a prompt |
 | `docs/2026-07-17-design-review.md` | 16 findings against the brief, the tokens, and the research |
 | `docs/2026-07-17-account-apple-tasks.md` | Task plan for deletion + Apple, with every trap named |
-| `docs/privacy-policy.md` | Ready to host. `privacy.html` (on the web repo) is the deployable version. One open item: `support@getotterly.com` must exist |
+| `docs/privacy-policy.md` | LIVE at getotterly.com/privacy (deployed 2026-07-18). `privacy.html` on the web repo is the deployed version. Support email is live. No open items |
 | `docs/2026-07-17-design-review.md` | 16 confirmed design findings; the top ones are fixed, the type-scale one is deferred with reason |
 | `HANDOFF-TO-EMERGENT.md` + `EMERGENT-PROMPT.md` | This file, and the prompt to paste into Emergent as the first message |
 | `frontend/EAS-SETUP.md` | Build and submit steps |
