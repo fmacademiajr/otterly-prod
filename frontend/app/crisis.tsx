@@ -14,7 +14,10 @@ const CRISIS_OTTER = "#7A98B0";
 const LINES = [
   { flag: "🇺🇸", label: "US", number: "988", tel: "988" },
   { flag: "🇵🇭", label: "PH", number: "1553", tel: "1553" },
-  { flag: "🇬🇧", label: "UK", number: "111", tel: "111" },
+  // Samaritans, free and 24/7. Was 111, which is NHS non-emergency triage, and it
+  // contradicted the referral ensure_referral appends (server.py:320). The app must
+  // not hand a person in crisis two different numbers.
+  { flag: "🇬🇧", label: "UK", number: "116 123", tel: "116123" },
   { flag: "🇨🇦", label: "CA", number: "988", tel: "988" },
   { flag: "🇦🇺", label: "AU", number: "13 11 14", tel: "131114" },
 ];
