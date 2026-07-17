@@ -655,7 +655,8 @@ async def shrink_task(task_id: str, payload: ShrinkRequest, who=Depends(resolve_
     # way, so the streak already counted work the user is about to stop seeing.
     done_count = await db.steps.count_documents({"task_id": task_id, "owner": owner_id, "done": True})
     if done_count and not payload.force:
-        raise HTTPException(409, f"{done_count} finished steps would be lost")
+        plural = "" if done_count == 1 else "s"
+        raise HTTPException(409, f"{done_count} finished step{plural} would be lost")
 
     prompt = f"Task: {task.title}\n"
     if task.note:

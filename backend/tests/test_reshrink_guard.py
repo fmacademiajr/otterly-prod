@@ -114,6 +114,14 @@ async def run():
     exc, db, calls = await call(done_count=3, force=False)
     rows.append(("finished steps -> 409", exc is not None and exc.status_code == 409,
                  repr(exc and (exc.status_code, exc.detail))))
+
+    # The 409 detail is user-facing copy. "1 finished steps would be lost" shipped
+    # to a real screen before anyone read it.
+    exc1, _, _ = await call(done_count=1, force=False)
+    rows.append(("409 copy is singular at 1", exc1 is not None and "1 finished step would" in exc1.detail,
+                 repr(exc1 and exc1.detail)))
+    rows.append(("409 copy is plural at 3", exc is not None and "3 finished steps would" in exc.detail,
+                 repr(exc and exc.detail)))
     rows.append(("409 destroys nothing", not db.steps.deleted, f"deleted={db.steps.deleted}"))
     # Checked before the LLM call, so a refusal costs no API call and no free-tier shrink.
     rows.append(("409 costs no LLM call", len(calls) == 0, f"llm_calls={len(calls)}"))
