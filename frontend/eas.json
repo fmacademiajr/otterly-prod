@@ -33,7 +33,7 @@
     "production": {
       "ios": {
         "appleId": "fernando.academia@yahoo.com.ph",
-        "ascAppId": "REPLACE_AFTER_APP_STORE_CONNECT_RECORD_EXISTS",
+        "ascAppId": "6792152908",
         "appleTeamId": "F3A9UX332N"
       },
       "android": {
