@@ -284,3 +284,83 @@ The `aud`/`iss`/wrong-key cases are what make this a security test rather than a
 **Also fix, while here:** `signIn` (`:106`) has no try/catch and `you.tsx:110` is a bare `onPress={signIn}`, so a failed exchange is an unhandled rejection with zero user feedback. Wrap both handlers. **Apple adds a case that MUST be swallowed: `e.code === "ERR_REQUEST_CANCELED"` fires every time the user taps cancel.** Surfacing that as an error is a bug a reviewer will hit on their first try.
 
 **Acceptance:** tsc adds no new errors; eslint clean. Note in your report that the Apple button cannot be exercised on web by design, so this task's UI is unverifiable until a TestFlight build.
+
+---
+
+## Task 6 — Voucher codes
+
+New feature, not a fix. Fernando needs to give selected people (press, beta testers, friends, early supporters) free access without them paying.
+
+**Fernando's decisions, already made — do not revisit:**
+- **Custom vouchers, not Apple Offer Codes.** Offer codes are subscription-only, so they cannot cover the `otter_lifetime` non-consumable, and they need App Store Connect setup that does not exist yet. Granting free access outside IAP is allowed by Apple. Only *selling* digital goods outside IAP is not.
+- **A voucher grants premium until a per-batch expiry date.** Not forever, not N-days-from-redemption. The batch carries the date, set at mint time.
+- **Minting is a CLI script Fernando runs.** No admin HTTP endpoint. This backend's only auth is an Emergent passthrough, and adding a privileged route days before submission is a new attack surface for no benefit.
+
+### The architectural constraint that shapes everything
+
+`db.entitlements` holds ONE document per `user_id`, and the RevenueCat webhook upserts into `premium.*` (`server.py:~520`). **A voucher must NOT write into that document.** If it did, any later RevenueCat event for that user could stomp the grant, and the two have completely different lifecycles and sources of truth. They must not share a row.
+
+So: a new `vouchers` collection, and `get_entitlement` resolves **either** source.
+
+**This makes `vouchers` the TENTH collection.** Two consequences, both mandatory:
+1. `backend/tests/test_account_delete.py` derives the collection set from `server.py` source and asserts `found <= ALL_NINE`. **It will fail the moment you add `db.vouchers`.** That is the guard working as designed — it forces a conscious map-or-exclude. Add `vouchers` to `ALL_NINE` and rename it (`ALL_COLLECTIONS`).
+2. A redeemed voucher carries a `user_id`, so it is person-linked. **It must go in the account-deletion map.** Decide and justify: does deleting an account release the code for reuse, or burn it? Recommend burning it — releasing it lets someone delete and re-redeem forever, and the whole point is a bounded giveaway.
+
+### Schema
+
+```python
+# db.vouchers, one doc per CODE (not per redemption)
+{
+  "code": "OTTER-XXXX-XXXX",     # unique index
+  "batch": "press-2026-07",      # for revoking or auditing a whole batch
+  "expires_at_ms": 1790000000000, # the grant's end, set at MINT time
+  "redeemed_by": None,            # user_id once redeemed, else None
+  "redeemed_at": None,
+  "created_at": "2026-07-17T...",
+}
+```
+Single-use: one code, one user. `redeemed_by` is the lock.
+
+### Backend, `backend/server.py`
+
+- `POST /api/vouchers/redeem` behind `require_user` (never `resolve_owner` — a grant must attach to a real account, not a device).
+  - Body: `{code: str}` with `max_length`. Normalise: uppercase, strip whitespace and dashes before lookup, so "otter xxxx xxxx" works. Store normalised.
+  - Already redeemed by someone else → 409. Already redeemed by THIS user → 200 idempotent, not an error (they tapped twice).
+  - Expired batch (`expires_at_ms` in the past) → 410 with copy saying it has expired.
+  - Unknown code → 404.
+  - **Rate limit it.** Reuse `check_rate`/`bump_rate` with a new kind (`"voucher"`, cap ~10/day). Without this the endpoint is a free brute-force oracle over the code space.
+  - Use `update_one` with a filter of `{"code": code, "redeemed_by": None}` and check `modified_count` — a find-then-write races two simultaneous redemptions onto one code.
+- `get_entitlement` resolves EITHER source. Order: check `entitlements` first (a real payer must never be downgraded by a lapsed voucher), then `vouchers`. Return `plan: "voucher"` so `/api/me/access` can be honest about why someone is premium.
+  - Honour `expires_at_ms` exactly as the paid path does.
+- Index: `db.vouchers.create_index("code", unique=True)` and `db.vouchers.create_index("redeemed_by")`. **Add it via the isolated per-index try/except from Task 3** — never inside a shared try.
+
+### The mint CLI, `backend/scripts/mint_vouchers.py`
+
+```
+./.venv/bin/python scripts/mint_vouchers.py --count 20 --batch press-2026-07 --expires 2027-01-31
+```
+- Codes must be **unguessable**: `secrets.token_urlsafe` or `secrets.choice` over an unambiguous alphabet. **Exclude I, l, 1, O, 0** — people read these off a screen and type them.
+- Format `OTTER-XXXX-XXXX`. Print them one per line so Fernando can paste into a sheet.
+- Idempotent on collision: retry on duplicate-key, never silently emit a dupe.
+- Print a summary: count, batch, expiry.
+
+### Frontend
+
+- `api.ts`: `redeemVoucher(code)`.
+- Redemption entry point: a row in the `you.tsx` settings group, "Have a voucher?" → a simple input. **Do NOT put it on the paywall.** Apple is sensitive about anything on a purchase screen that reads as a way around IAP, and a code field beside the buy buttons invites that reading. The settings group is the safe, conventional home.
+- `COPY:` house style. On success say what they got and until when. On 409/410/404 say plainly what happened. No shame, no "invalid" scolding.
+
+### Test — `backend/tests/test_vouchers.py`
+
+Use the stub-and-boot pattern (`test_referral_wiring.py`) against a fake db, plus a live run against the docker mongod at `mongodb://localhost:27099` if reachable (skip with a reason if not — do not mongomock it).
+Required cases:
+- redeem a valid code → premium active, `plan == "voucher"`
+- redeem the SAME code as a second user → 409, first user keeps it
+- redeem twice as the SAME user → 200 idempotent
+- expired batch → 410, no grant
+- unknown code → 404
+- **a real paid entitlement is NOT downgraded by an expired voucher** (the resolution-order case)
+- **the race**: two concurrent redemptions of one code, exactly one wins (assert via the `{"code":..., "redeemed_by": None}` filter + `modified_count`)
+- normalisation: lowercase and spaced input finds the code
+
+**Acceptance:** all cases pass, `test_account_delete.py` still passes after `vouchers` joins the map, and the full backend suite is green.
