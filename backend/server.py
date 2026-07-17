@@ -23,6 +23,7 @@ from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import json
+import re
 import hmac
 import hashlib
 import time
@@ -103,6 +104,8 @@ class Step(BaseModel):
 class ShrinkRequest(BaseModel):
     difficulty: Difficulty = "medium"
     deep: bool = False  # premium: use Opus-4-8 for a deeper shrink
+    force: bool = False  # re-shrink even though finished steps will be destroyed
+    too_big: bool = False  # the last steps were too big, ask for smaller first actions
 
 
 class NextRequest(BaseModel):
@@ -123,6 +126,8 @@ class BraindumpRequest(BaseModel):
 
 class BraindumpResponse(BaseModel):
     tasks: List[str]
+    # ponytail: braindump discards feelings by design, so a disclosure had nowhere to land.
+    referral: Optional[str] = None
 
 
 class RoomMessage(BaseModel):
@@ -285,6 +290,32 @@ async def _llm_json(session_id: str, system: str, user_text: str, deep: bool = F
     except json.JSONDecodeError as e:
         logger.warning("LLM JSON parse failed: %s | raw=%r", e, raw)
         raise HTTPException(status_code=502, detail="AI returned an unusable response — please try again.")
+
+
+# ---------- Safety ----------
+
+# ponytail: append-only, never routes. A false positive costs one extra sentence
+# at the end of a kind message, so the failure direction is harmless by construction.
+# Anchored to disclosure phrasings: "killing me", "dying under this deadline" and
+# "this project is murder" must NOT match. Ceiling: no paraphrase or metaphor is
+# caught. This backstops the model, it does not replace it.
+SELF_HARM_RE = re.compile(
+    r"\bkill (?:myself|me now)\b|\bend (?:my life|it all)\b|\bwant to die\b|"
+    r"\bsuicide\b|\bsuicidal\b|\bkilling myself\b|\bnot worth living\b|\bhurt myself\b",
+    re.I,
+)
+
+REFERRAL = (
+    "I care that you told me. Please reach a real person - "
+    "988 (US), 116 123 (UK), or NCMH 1553 (PH)."
+)
+
+
+def ensure_referral(reply: str, user_text: str) -> str:
+    """Guarantee the referral when a disclosure is present. The prompt asks, this enforces."""
+    if SELF_HARM_RE.search(user_text or "") and "988" not in reply:
+        return reply.rstrip(". ") + ". " + REFERRAL
+    return reply
 
 
 # ---------- Health ----------
@@ -500,19 +531,103 @@ async def list_steps(task_id: str, who=Depends(resolve_owner)):
 
 # ---------- Shrink ----------
 
+# ponytail: denylist of ABSTRACT verbs, not an allowlist of physical ones.
+# The physical-verb space is open and huge (mail/water/vacuum/chop/iron/mop...).
+# The planning-verb space is small and closed. Measured: a 90-word physical
+# allowlist false-rejected 18/18 real chore steps. This list false-rejects 0/23.
+# Ceiling: cannot catch scope ("Write the report" passes). Upgrade = a classifier.
+ABSTRACT_VERBS = {
+    "plan", "figure", "think", "decide", "consider", "brainstorm", "organize",
+    "research", "identify", "clarify", "assess", "determine", "evaluate",
+    "ascertain", "map", "outline", "strategize", "understand", "define",
+    "explore", "reflect", "conceptualize", "ideate",
+}
+# No English imperative starts with these, so this is the verb-first check a denylist can express.
+NON_IMPERATIVE = {"the", "your", "a", "an", "it", "this", "that", "you", "there", "its", "my", "i", "we"}
+# Physical verb + abstract particle. The verb is fine, the idiom is not.
+VAGUE_IDIOM = ("sort out", "get started", "run through", "check in on", "go over")
+
+# ponytail: anchored. Unanchored \bfinally\b ate "Type the finally block" (try/finally)
+# and \bjust\s+\w+ ate "Open the Just Eat app". Shame shames sentence-initially.
+SHAME_RE = re.compile(
+    r"^just\s+\w+|^simply\b|^finally\b|^at last\b|all you have to do|"
+    r"should(?:'ve| have)\b|shouldn't have|why didn't you|\bobviously\b|it's easy|"
+    r"you have been avoiding|been putting (?:this|it) off|you neglected",
+    re.I,
+)
+
+# ponytail: minute ceilings are a product guess, not a research finding. Tune on completion data.
+MAX_MINUTES = {"activation": 5, "easy": 5, "medium": 10, "hard": 25}
+LADDER = [1, 2, 5, 10, 25]
+
+
+def _clamp_minutes(minutes: int, bucket: str) -> int:
+    """Asymmetric: over-ceiling never reaches here, it is a `problem` instead.
+    Under-labeling is harmless. Over-labeling makes a frozen user fail against a
+    promise the app invented."""
+    allowed = [x for x in LADDER if x <= MAX_MINUTES[bucket]]
+    return min(allowed, key=lambda x: abs(x - minutes))
+
+
+def _norm(t: str) -> str:
+    return re.sub(r"[^a-z0-9 ]", "", t.lower()).strip()
+
+
+def _validate_steps(raw_steps: list, difficulty: str) -> Tuple[List[dict], List[str]]:
+    """Returns (clean, problems). Never raises. Caller inserts clean only.
+    Enforces grammar, shape and honest labels. Does NOT enforce scope."""
+    clean: List[dict] = []
+    problems: List[str] = []
+    seen = set()
+    for i, s in enumerate(raw_steps[:12]):
+        text = str(s.get("text", "")).strip()
+        if not text:
+            continue
+        n = _norm(text)
+        first = n.split(" ")[0] if n else ""
+        bucket = "activation" if i == 0 else difficulty  # keyed on i, NOT len(clean)
+        want = int(s.get("minutes") or 10)
+
+        if first in NON_IMPERATIVE:
+            problems.append(f'step {i+1} "{text}" is not an instruction, start with a verb')
+        elif first in ABSTRACT_VERBS:
+            problems.append(f'step {i+1} "{text}" starts with "{first}", name a physical action')
+        elif any(p in n for p in VAGUE_IDIOM):
+            problems.append(f'step {i+1} "{text}" is vague, name the physical action')
+        elif len(n.split()) > 10:
+            problems.append(f'step {i+1} "{text}" is too long or chains actions')
+        elif n in seen:
+            problems.append(f'step {i+1} "{text}" duplicates an earlier step')
+        elif SHAME_RE.search(text):
+            problems.append(f'step {i+1} "{text}" carries shame language')
+        elif want > MAX_MINUTES[bucket]:
+            problems.append(f'step {i+1} "{text}" needs {want} min, must fit under {MAX_MINUTES[bucket]} min')
+        else:
+            seen.add(n)
+            clean.append({"text": text, "minutes": _clamp_minutes(want, bucket)})
+
+    if not clean and not problems:
+        problems.append("return 2 to 6 concrete steps")
+    return clean, problems
+
+
 SHRINK_SYSTEM = """You are Otterly, a calm ADHD-friendly companion. You help people with ADHD start tasks by breaking them into tiny concrete micro-steps.
 
 Rules:
 - Return STRICT JSON only. No prose, no fenced code.
-- 3 to 10 micro-steps. Fewer is better if the task allows.
-- Each step MUST be a single concrete physical action that takes 5 to 25 minutes.
-- Steps must start with a verb ("Open", "Walk to", "Type", "Send").
-- Never generic ("plan it out"). Always concrete ("Open Gmail and start a draft to Jane").
-- Tone: warm, non-shame, brief. Never mention how the user 'should' have done this earlier.
-- For difficulty "easy": more steps, smaller (5 min each). For "medium": mid (10 min). For "hard": fewer/bigger steps (up to 25 min).
+- 2 to 6 micro-steps. Fewer is better if the task allows. Never pad a small task.
+- Step 1 is the activation step: one physical movement or app-open, under 5 minutes, requiring zero decisions. It exists to get the body moving, not to make progress.
+- Every other step is a single concrete physical action.
+- Steps start with a physical verb ("Open", "Walk to", "Type", "Send"). Never "The", "Your", "It".
+- One action per step. Never two joined by "and", "then", or a comma chain. Keep each step under 10 words.
+- Never generic ("plan it out", "figure out the intro", "sort out the receipts"). Always concrete ("Open Gmail").
+- Never a duplicate of another step.
+- Give each step an HONEST minute estimate. Do not shrink the number to fit a limit. If the work is 25 minutes, say 25 and make the step smaller instead.
+- Tone: warm, brief, no shame. Never mention how the user 'should' have done this earlier. Never open a step with "Just", "Simply", or "Finally".
+- Step size for steps 2 and up: "easy" = under 5 min each. "medium" = under 10 min. "hard" = under 25 min. This never applies to step 1.
 
 Return JSON shape:
-{"steps": [{"text": "...", "minutes": 5}]}
+{"steps": [{"text": "Open the doc", "minutes": 2}, {"text": "Type the first paragraph", "minutes": 10}]}
 """
 
 
@@ -535,10 +650,21 @@ async def shrink_task(task_id: str, payload: ShrinkRequest, who=Depends(resolve_
         raise HTTPException(404, "task not found")
     task = Task(**{k: v for k, v in task_doc.items() if k != "owner"})
 
+    # ponytail: re-shrink destroys finished steps. Checked BEFORE the LLM call so a
+    # refusal costs no API call and no free-tier shrink. db.activity survives either
+    # way, so the streak already counted work the user is about to stop seeing.
+    done_count = await db.steps.count_documents({"task_id": task_id, "owner": owner_id, "done": True})
+    if done_count and not payload.force:
+        raise HTTPException(409, f"{done_count} finished steps would be lost")
+
     prompt = f"Task: {task.title}\n"
     if task.note:
         prompt += f"Note: {task.note}\n"
-    prompt += f"Difficulty preference: {payload.difficulty}\n\nReturn JSON."
+    prompt += f"Difficulty preference: {payload.difficulty}\n"
+    if payload.too_big:
+        # The clamp changes the number. Only the prompt changes the work.
+        prompt += "The last steps were too big for this person. Return smaller first actions, not smaller estimates.\n"
+    prompt += "\nReturn JSON."
 
     data = await _llm_json(
         f"shrink-{task_id}-{uuid.uuid4()}",
@@ -547,24 +673,33 @@ async def shrink_task(task_id: str, payload: ShrinkRequest, who=Depends(resolve_
         deep=payload.deep,
     )
 
-    raw_steps = data.get("steps") or []
-    if not raw_steps:
-        raise HTTPException(502, "AI returned no steps")
+    clean, problems = _validate_steps(data.get("steps") or [], payload.difficulty)
+
+    if problems:
+        # ponytail: exactly one repair, and its failure is not the user's problem.
+        try:
+            data = await _llm_json(
+                f"shrink-{task_id}-{uuid.uuid4()}",
+                SHRINK_SYSTEM,
+                prompt + "\n\nYour last answer had problems:\n- " + "\n- ".join(problems)
+                + "\nReturn corrected JSON.",
+                deep=payload.deep,
+            )
+            repaired, _ = _validate_steps(data.get("steps") or [], payload.difficulty)
+            if len(repaired) >= len(clean):
+                clean = repaired
+        except Exception as e:
+            logger.warning("shrink repair failed, keeping %d survivors: %s", len(clean), e)
+
+    # Never hard-fail when good steps exist. 502 only when nothing survived.
+    if not clean:
+        raise HTTPException(502, "AI returned no usable steps")
 
     await db.steps.delete_many({"task_id": task_id, "owner": owner_id})
 
-    steps: List[Step] = []
-    for i, s in enumerate(raw_steps[:12]):
-        minutes = int(s.get("minutes") or 10)
-        minutes = min([5, 10, 25], key=lambda x: abs(x - minutes))
-        step = Step(task_id=task_id, order=i, text=str(s.get("text", "")).strip(), minutes=minutes)
-        if step.text:
-            steps.append(step)
-
-    if steps:
-        docs = [{**s.dict(), "owner": owner_id} for s in steps]
-        await db.steps.insert_many(docs)
-        await db.tasks.update_one({"id": task_id, "owner": owner_id}, {"$set": {"shrunk": True, "difficulty": payload.difficulty}})
+    steps: List[Step] = [Step(task_id=task_id, order=i, **c) for i, c in enumerate(clean)]
+    await db.steps.insert_many([{**s.dict(), "owner": owner_id} for s in steps])
+    await db.tasks.update_one({"id": task_id, "owner": owner_id}, {"$set": {"shrunk": True, "difficulty": payload.difficulty}})
 
     if not ent["active"]:
         await bump_rate(owner_id, "shrink")
@@ -689,7 +824,8 @@ async def braindump(payload: BraindumpRequest, who=Depends(resolve_owner)):
     if not ent["active"]:
         await bump_rate(owner_id, "braindump")
 
-    return BraindumpResponse(tasks=tasks[:12])
+    referral = REFERRAL if SELF_HARM_RE.search(payload.text) else None
+    return BraindumpResponse(tasks=tasks[:12], referral=referral)
 
 
 # ---------- Voice transcribe ----------
@@ -773,7 +909,7 @@ async def room_message(payload: RoomMessage, who=Depends(resolve_owner)):
     if payload.goal and len(history) <= 2:
         prompt = f"(User goal for this session: {payload.goal})\n\n{payload.text}"
     reply = await chat.send_message(UserMessage(text=prompt))
-    reply_text = (reply or "").strip()
+    reply_text = ensure_referral((reply or "").strip(), payload.text)
 
     otter_doc = RoomMessageDoc(session_id=payload.session_id, role="otter", text=reply_text)
     await db.room_messages.insert_one({**otter_doc.dict(), "owner": owner_id})

@@ -22,10 +22,17 @@ export default function InboxScreen() {
   const { colors } = useTheme();
   const router = useRouter();
   const [tasks, setTasks] = useState<Task[]>([]);
+
+  // The inbox IS a menu, you pick one task from many, so the choice-overload
+  // threshold applies here. Revealed on tap, never silently dropped: a task you
+  // typed and cannot find is worse than a long list.
+  const TASK_CAP = 7;
   const [text, setText] = useState("");
   const [dumping, setDumping] = useState(false);
   const [mode, setMode] = useState<"quick" | "dump">("quick");
   const [error, setError] = useState("");
+  const [referral, setReferral] = useState("");
+  const [showAllTasks, setShowAllTasks] = useState(false);
   const [recording, setRecording] = useState(false);
   const [transcribing, setTranscribing] = useState(false);
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
@@ -54,6 +61,9 @@ export default function InboxScreen() {
     }
   };
 
+  const visibleTasks = showAllTasks ? tasks : tasks.slice(0, TASK_CAP);
+  const hiddenTasks = tasks.length - visibleTasks.length;
+
   const braindump = async () => {
     const clean = text.trim();
     if (!clean) return;
@@ -65,6 +75,7 @@ export default function InboxScreen() {
         await api.createTask(t);
       }
       setText("");
+      setReferral(res.referral || "");
       load();
     } catch (e: any) {
       setError(e instanceof ApiError && e.status === 429 ? e.detail : "Braindump failed. Try again.");
@@ -238,15 +249,24 @@ export default function InboxScreen() {
           <Text style={[styles.error, { color: colors.danger, fontFamily: fonts.body }]}>{error}</Text>
         ) : null}
 
-        {/* Task list section */}
-        <Text style={[styles.section, { color: colors.text, fontFamily: fonts.display }]}>
-          Today's Focus
-        </Text>
+        {referral ? (
+          <View
+            testID="braindump-referral"
+            style={[styles.referral, { backgroundColor: colors.warmSurface, borderColor: colors.warmBorder }]}
+          >
+            <Text style={{ color: colors.text, fontFamily: fonts.body, fontSize: 14, lineHeight: 20 }}>
+              {referral}
+            </Text>
+          </View>
+        ) : null}
+
+        {/* ponytail: "Today's Focus" headed a list that is neither today's nor a focus.
+            It was the whole inbox wearing a promise the app does not keep. */}
         <View style={[styles.divider, { backgroundColor: colors.warmBorder }]} />
 
         <FlatList
           contentContainerStyle={styles.list}
-          data={tasks}
+          data={visibleTasks}
           keyExtractor={(t) => t.id}
           renderItem={({ item }) => (
             <TouchableOpacity
@@ -291,6 +311,15 @@ export default function InboxScreen() {
                 Empty is okay too.
               </Text>
             </View>
+          }
+          ListFooterComponent={
+            hiddenTasks > 0 ? (
+              <TouchableOpacity testID="inbox-reveal-rest" onPress={() => setShowAllTasks(true)} style={styles.empty}>
+                <Text style={[styles.emptyText, { color: colors.textMuted, fontFamily: fonts.body }]}>
+                  {hiddenTasks} more waiting
+                </Text>
+              </TouchableOpacity>
+            ) : null
           }
         />
       </KeyboardAvoidingView>
@@ -362,6 +391,13 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   error: { fontSize: 13, paddingHorizontal: spacing.lg, marginBottom: spacing.sm },
+  referral: {
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.sm,
+    padding: spacing.md,
+    borderRadius: radii.md,
+    borderWidth: 1,
+  },
   section: {
     fontSize: 22,
     paddingHorizontal: spacing.lg,

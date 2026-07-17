@@ -113,18 +113,27 @@ export const api = {
   shrinkTask: (
     taskId: string,
     difficulty: "easy" | "medium" | "hard",
-    deep = false
+    deep = false,
+    opts: { force?: boolean; tooBig?: boolean } = {}
   ) =>
     req<Step[]>(`/api/tasks/${taskId}/shrink`, {
       method: "POST",
-      body: JSON.stringify({ difficulty, deep }),
+      body: JSON.stringify({
+        difficulty,
+        deep,
+        force: opts.force ?? false,
+        too_big: opts.tooBig ?? false,
+      }),
     }),
   toggleStep: (stepId: string, done: boolean) =>
     req<Step>(`/api/steps/${stepId}`, { method: "PATCH", body: JSON.stringify({ done }) }),
   next: (energy: Energy, minutes?: number) =>
     req<NextResponse>("/api/next", { method: "POST", body: JSON.stringify({ energy, minutes }) }),
   braindump: (text: string) =>
-    req<{ tasks: string[] }>("/api/braindump", { method: "POST", body: JSON.stringify({ text }) }),
+    req<{ tasks: string[]; referral?: string | null }>("/api/braindump", {
+      method: "POST",
+      body: JSON.stringify({ text }),
+    }),
 
   transcribe: async (uri: string): Promise<{ text: string }> => {
     const form = new FormData();

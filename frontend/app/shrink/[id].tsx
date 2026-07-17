@@ -9,7 +9,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { Check, X, RotateCcw, Play, Pause, Sparkles, Square } from "lucide-react-native";
+import { Check, X, Play, Pause, Sparkles, Square } from "lucide-react-native";
 import * as Haptics from "expo-haptics";
 
 import { SoftExit } from "@/src/components/OtterButton";
@@ -20,18 +20,29 @@ import { useTheme } from "@/src/theme/ThemeProvider";
 import { fonts, radii, spacing } from "@/src/theme/tokens";
 
 type Difficulty = "easy" | "medium" | "hard";
-const DIFF: Difficulty[] = ["easy", "medium", "hard"];
+
+// ponytail: one rung down, and "easy" is the floor. A second tap has nowhere to go,
+// which is the Binary Choice Rule, not a maximizer's "keep searching" affordance.
+const SMALLER: Record<Difficulty, Difficulty | null> = { hard: "medium", medium: "easy", easy: null };
+
+type BannerKind = "" | "upsell" | "confirm" | "retry";
 
 export default function ShrinkScreen() {
   const { colors } = useTheme();
   const router = useRouter();
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, focusStep } = useLocalSearchParams<{ id: string; focusStep?: string }>();
   const [task, setTask] = useState<Task | null>(null);
   const [steps, setSteps] = useState<Step[]>([]);
   const [difficulty, setDifficulty] = useState<Difficulty>("medium");
   const [loading, setLoading] = useState(true);
   const [shrinking, setShrinking] = useState(false);
   const [error, setError] = useState<string>("");
+  const [banner, setBanner] = useState<BannerKind>("");
+  // Carries tooBig too: confirming a 409 must re-send the SAME request plus force,
+  // otherwise "Still too big" -> confirm silently re-shrinks without the hint.
+  const [pending, setPending] = useState<{ d: Difficulty; deep: boolean; tooBig: boolean } | null>(null);
+  const [showAll, setShowAll] = useState(false);
+  const [tooBigUsed, setTooBigUsed] = useState(false);
 
   // Timer state
   const [activeStep, setActiveStep] = useState<string | null>(null);
@@ -54,7 +65,14 @@ export default function ShrinkScreen() {
           const shrunk = await api.shrinkTask(id, t?.difficulty || "medium");
           setSteps(shrunk);
         } catch (e: any) {
-          if (e instanceof ApiError && e.status === 429) setError(e.detail);
+          // ponytail: was 429-only, so every other failure left an empty screen with no reason.
+          if (e instanceof ApiError && (e.status === 429 || e.status === 402)) {
+            setBanner("upsell");
+            setError(e.detail);
+          } else {
+            setBanner("retry");
+            setError("Otterly could not shrink this one. Nothing is lost.");
+          }
         }
         setShrinking(false);
       }
@@ -65,24 +83,82 @@ export default function ShrinkScreen() {
 
   useEffect(() => { load(); }, [load]);
 
+  // Next tab sends focusStep. It was pushed but never read, so "start this one"
+  // dropped you at the top of an undifferentiated list.
+  //
+  // ponytail: one-shot. `steps` is a dep (we cannot focus a step before it loads),
+  // and toggle() replaces the array on every tap, so without this guard every
+  // checkbox re-applied focus and yanked activeStep away from a running timer.
+  const focusApplied = useRef(false);
+  useEffect(() => {
+    if (focusApplied.current || !focusStep || !steps.length) return;
+    const idx = steps.findIndex((s) => s.id === focusStep);
+    if (idx === -1) return;
+    focusApplied.current = true;
+    setActiveStep(focusStep);
+    // Only break the one-at-a-time view if the step we were sent to is actually hidden.
+    const firstUndoneIdx = steps.findIndex((s) => !s.done);
+    if (firstUndoneIdx !== -1 && idx > firstUndoneIdx && !steps[idx].done) setShowAll(true);
+  }, [focusStep, steps]);
+
   useEffect(() => () => { if (timerRef.current) clearInterval(timerRef.current); }, []);
 
-  const doShrink = async (d: Difficulty, deep = false) => {
+  const doShrink = async (
+    d: Difficulty,
+    deep = false,
+    opts: { force?: boolean; tooBig?: boolean } = {}
+  ) => {
     if (!id) return;
-    setDifficulty(d);
     setError("");
+    setBanner("");
     setShrinking(true);
     try {
-      const shrunk = await api.shrinkTask(id, d, deep);
+      const shrunk = await api.shrinkTask(id, d, deep, opts);
       setSteps(shrunk);
+      // Only on success. A failed "Still too big" must not strand difficulty at a
+      // rung the backend never applied, which would hide the button on the retry.
+      setDifficulty(d);
+      setShowAll(false);
+      if (opts.tooBig) setTooBigUsed(true);
     } catch (e: any) {
       if (e instanceof ApiError) {
-        setError(e.status === 429 || e.status === 402 ? e.detail : "Something went wrong. Try again.");
+        if (e.status === 429 || e.status === 402) {
+          setBanner("upsell");
+          setError(e.detail);
+        } else if (e.status === 409) {
+          // ponytail: the banner is already a tappable action surface. No Modal needed.
+          setBanner("confirm");
+          setPending({ d, deep, tooBig: opts.tooBig ?? false });
+          setError(`${e.detail}. Re-shrink anyway?`);
+        } else {
+          setBanner("retry");
+          setError("Otterly could not shrink this one. Nothing is lost.");
+        }
       }
     }
     setShrinking(false);
   };
   const deepShrink = () => doShrink(difficulty, true);
+
+  const smaller = SMALLER[difficulty];
+  const stillTooBig = () => smaller && doShrink(smaller, false, { tooBig: true });
+
+  // Next-Action Method: only the immediate next physical action is a demand.
+  // Finished steps stay visible, they are evidence of competence, not a demand.
+  // This is a disclosure and not a deletion, so the externalized list survives.
+  const firstUndone = steps.findIndex((s) => !s.done);
+  const visibleSteps =
+    showAll || firstUndone === -1
+      ? steps
+      : steps.filter((s, i) => s.done || i <= firstUndone);
+  const hiddenCount = steps.length - visibleSteps.length;
+
+  const onBannerPress = () => {
+    if (banner === "upsell") return router.push("/paywall");
+    if (banner === "confirm" && pending)
+      return doShrink(pending.d, pending.deep, { force: true, tooBig: pending.tooBig });
+    return doShrink(difficulty);
+  };
 
   const toggle = async (step: Step) => {
     if (!step.done) Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
@@ -185,14 +261,9 @@ export default function ShrinkScreen() {
           <Text style={[styles.eyebrow, { color: colors.textSubtle, fontFamily: fonts.body }]}>
             shrinker
           </Text>
-          <TouchableOpacity
-            onPress={() => doShrink(difficulty)}
-            disabled={shrinking}
-            testID="reshrink"
-            style={styles.smallBtn}
-          >
-            <RotateCcw color={colors.textMuted} size={20} strokeWidth={1.5} />
-          </TouchableOpacity>
+          {/* ponytail: the re-shrink icon lived here and silently destroyed finished
+              steps. "Still too big" below the list replaces it, once, with words. */}
+          <View style={styles.smallBtn} />
         </View>
       )}
 
@@ -206,41 +277,22 @@ export default function ShrinkScreen() {
           {task?.title || "…"}
         </Text>
 
-        {/* Difficulty */}
-        <View style={styles.diffRow}>
-          {DIFF.map((d) => (
-            <TouchableOpacity
-              key={d}
-              testID={`diff-${d}`}
-              onPress={() => doShrink(d)}
-              disabled={shrinking}
-              style={[
-                styles.diffBtn,
-                { backgroundColor: d === difficulty ? colors.primarySurfaceStrong : colors.warmSurface, borderColor: d === difficulty ? colors.primary : colors.warmBorder },
-              ]}
-            >
-              <Text style={{
-                color: d === difficulty ? colors.primary : colors.textMuted,
-                fontFamily: d === difficulty ? fonts.bodySemibold : fonts.body,
-                fontSize: 15,
-              }}>
-                {d}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
+        {/* ponytail: the easy/medium/hard pills lived here. They asked a frozen person to
+            size a task they had not decomposed yet, and load() auto-shrank on "medium"
+            before anyone could tap. That is a decision spent for nothing. */}
 
         {error ? (
+          // ponytail: an upsell, a failure and a confirm are different events. Only the upsell sells.
           <TouchableOpacity
-            testID="shrink-error-upgrade"
-            onPress={() => router.push("/paywall")}
+            testID={`shrink-banner-${banner || "retry"}`}
+            onPress={onBannerPress}
             style={[styles.errorBanner, { backgroundColor: colors.warmSurface, borderColor: colors.warmBorder }]}
           >
             <Text style={{ color: colors.text, fontFamily: fonts.body, fontSize: 14, lineHeight: 20 }}>
               {error}
             </Text>
             <Text style={{ color: colors.primary, fontFamily: fonts.bodySemibold, fontSize: 13, marginTop: 6 }}>
-              See Otter Premium →
+              {banner === "upsell" ? "See Otter Premium →" : banner === "confirm" ? "Re-shrink anyway" : "Try again"}
             </Text>
           </TouchableOpacity>
         ) : null}
@@ -254,12 +306,17 @@ export default function ShrinkScreen() {
             </Text>
           </View>
         ) : steps.length === 0 ? (
+          // ponytail: pointed at the ↻ icon, which no longer exists. The banner above
+          // now carries the retry, so the empty state only has to be kind.
           <Text style={{ color: colors.textMuted, fontFamily: fonts.body, textAlign: "center", padding: spacing.xl }}>
-            No steps yet. Tap the ↻ to shrink.
+            No steps yet.
           </Text>
         ) : (
-          steps.map((step, i) => {
+          visibleSteps.map((step, i) => {
             const isActive = activeStep === step.id;
+            // Numbering must follow the real list, not the visible slice, or a
+            // collapsed list renumbers itself every time a step is finished.
+            const stepNo = steps.findIndex((s) => s.id === step.id) + 1;
             return (
               <FadeUp key={step.id} delay={i * 60} duration={320}>
                 <View
@@ -293,7 +350,7 @@ export default function ShrinkScreen() {
                       },
                     ]}
                   >
-                    {i + 1}. {step.text}
+                    {stepNo}. {step.text}
                   </Text>
                   <TouchableOpacity
                     testID={`step-timer-${step.id}`}
@@ -320,6 +377,31 @@ export default function ShrinkScreen() {
           })
         )}
 
+        {hiddenCount > 0 ? (
+          <TouchableOpacity
+            testID="reveal-rest"
+            onPress={() => setShowAll(true)}
+            style={styles.revealBtn}
+          >
+            <Text style={{ color: colors.textMuted, fontFamily: fonts.body, fontSize: 14 }}>
+              {hiddenCount} more step{hiddenCount > 1 ? "s" : ""}
+            </Text>
+          </TouchableOpacity>
+        ) : null}
+
+        {/* One rung down, once. At "easy" the button is gone, so there is nothing to maximize. */}
+        {steps.length > 0 && !tooBigUsed && smaller && !shrinking ? (
+          <TouchableOpacity
+            testID="still-too-big"
+            onPress={stillTooBig}
+            style={[styles.tooBigBtn, { borderColor: colors.warmBorder }]}
+          >
+            <Text style={{ color: colors.textMuted, fontFamily: fonts.body, fontSize: 14 }}>
+              Still too big
+            </Text>
+          </TouchableOpacity>
+        ) : null}
+
         {/* Celebration banner when all steps are done */}
         {steps.length > 0 && steps.every((s) => s.done) ? (
           <View style={[styles.celebrateBanner, { backgroundColor: colors.primarySurface, borderColor: colors.primary }]}>
@@ -335,23 +417,29 @@ export default function ShrinkScreen() {
           </View>
         ) : null}
 
-        <View style={{ height: spacing.lg }} />
-        <TouchableOpacity
-          testID="deep-shrink"
-          onPress={deepShrink}
-          disabled={shrinking}
-          style={[styles.deepBtn, { borderColor: colors.accent, backgroundColor: colors.accentSurface }]}
-        >
-          <Sparkles size={14} color={colors.accent} strokeWidth={1.8} />
-          <Text style={{
-            color: colors.accent,
-            fontFamily: fonts.bodySemibold,
-            fontSize: 14,
-            marginLeft: 6,
-          }}>
-            Deep Shrink (premium)
-          </Text>
-        </TouchableOpacity>
+        {/* ponytail: only offered once a shrink worked. Selling a premium tier to someone
+            whose shrink just failed monetizes the failure. */}
+        {steps.length > 0 ? (
+          <>
+            <View style={{ height: spacing.lg }} />
+            <TouchableOpacity
+              testID="deep-shrink"
+              onPress={deepShrink}
+              disabled={shrinking}
+              style={[styles.deepBtn, { borderColor: colors.accent, backgroundColor: colors.accentSurface }]}
+            >
+              <Sparkles size={14} color={colors.accent} strokeWidth={1.8} />
+              <Text style={{
+                color: colors.accent,
+                fontFamily: fonts.bodySemibold,
+                fontSize: 14,
+                marginLeft: 6,
+              }}>
+                Deep Shrink (premium)
+              </Text>
+            </TouchableOpacity>
+          </>
+        ) : null}
 
         <SoftExit label="Come back later" testID="shrink-back" onPress={() => router.back()} />
         <View style={{ height: spacing.xxl }} />
@@ -390,17 +478,18 @@ const styles = StyleSheet.create({
   eyebrow: { fontSize: 12, letterSpacing: 4, textTransform: "uppercase" },
   scroll: { paddingHorizontal: spacing.lg, paddingBottom: spacing.xxl },
   taskTitle: { fontSize: 44, lineHeight: 50, marginBottom: spacing.lg, marginTop: spacing.md },
-  diffRow: {
-    flexDirection: "row",
-    gap: spacing.sm,
-    marginBottom: spacing.lg,
+  revealBtn: {
+    alignItems: "center",
+    paddingVertical: spacing.md,
+    marginTop: spacing.sm,
   },
-  diffBtn: {
-    flex: 1,
+  tooBigBtn: {
+    alignSelf: "center",
     borderRadius: radii.pill,
     borderWidth: 1,
-    paddingVertical: spacing.md,
-    alignItems: "center",
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    marginTop: spacing.md,
   },
   stepCard: {
     flexDirection: "row",
