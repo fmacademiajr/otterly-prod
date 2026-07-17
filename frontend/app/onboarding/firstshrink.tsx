@@ -14,7 +14,7 @@ import { useRouter } from "expo-router";
 import { ArrowLeft } from "lucide-react-native";
 import Svg, { Path } from "react-native-svg";
 
-import { api } from "@/src/lib/api";
+import { api, ApiError } from "@/src/lib/api";
 import { useTheme } from "@/src/theme/ThemeProvider";
 import { fonts, radii, spacing } from "@/src/theme/tokens";
 import { storage } from "@/src/utils/storage";
@@ -48,16 +48,20 @@ export default function FirstShrink() {
   const { colors } = useTheme();
   const [title, setTitle] = useState("");
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
   const submit = async () => {
     const clean = title.trim();
     if (!clean) return;
     setLoading(true);
+    setError("");
     try {
       const task = await api.createTask(clean);
       api.shrinkTask(task.id, "medium").catch(() => {});
       await storage.setItem("otterly.firstTaskId", task.id);
       router.push({ pathname: "/onboarding/name", params: { taskId: task.id } });
+    } catch (e: any) {
+      setError(e instanceof ApiError && e.status === 429 ? e.detail : "Couldn't save. Try again.");
     } finally {
       setLoading(false);
     }
@@ -116,6 +120,12 @@ export default function FirstShrink() {
               },
             ]}
           />
+
+          {error ? (
+            <Text style={{ color: colors.danger, fontFamily: fonts.body, fontSize: 14, marginTop: spacing.sm }}>
+              {error}
+            </Text>
+          ) : null}
 
           <View style={{ height: spacing.lg }} />
 

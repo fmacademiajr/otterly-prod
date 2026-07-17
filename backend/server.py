@@ -78,8 +78,8 @@ Difficulty = Literal["easy", "medium", "hard"]
 
 
 class TaskCreate(BaseModel):
-    title: str
-    note: Optional[str] = None
+    title: str = Field(max_length=200)
+    note: Optional[str] = Field(default=None, max_length=2000)
 
 
 class Task(BaseModel):
@@ -121,7 +121,7 @@ class NextResponse(BaseModel):
 
 
 class BraindumpRequest(BaseModel):
-    text: str
+    text: str = Field(max_length=5000)
 
 
 class BraindumpResponse(BaseModel):
@@ -132,8 +132,8 @@ class BraindumpResponse(BaseModel):
 
 class RoomMessage(BaseModel):
     session_id: str
-    text: str
-    goal: Optional[str] = None
+    text: str = Field(max_length=2000)
+    goal: Optional[str] = Field(default=None, max_length=200)
 
 
 class RoomResponse(BaseModel):
@@ -773,12 +773,14 @@ async def next_action(payload: NextRequest, who=Depends(resolve_owner)):
         f"Available minutes: {payload.minutes or 'unspecified'}\n\n"
         f"Undone micro-steps:\n" + "\n".join(lines) + "\n\nReturn JSON."
     )
-    data = await _llm_json("next-" + str(uuid.uuid4()), NEXT_SYSTEM, user_text)
+    try:
+        data = await _llm_json("next-" + str(uuid.uuid4()), NEXT_SYSTEM, user_text)
+    except Exception as e:
+        logger.warning("next_action LLM failed, falling back: %s", e)
+        data = {}
+
     step_id = data.get("step_id")
     reason = str(data.get("reason", "")).strip() or "This one's small enough to start."
-
-    if not step_id:
-        return NextResponse(empty=True, reason=reason)
 
     step_doc = next((s for s in candidates if s["id"] == step_id), None)
     if not step_doc:
@@ -844,6 +846,9 @@ async def transcribe(audio: UploadFile = File(...), who=Depends(resolve_owner)):
         allowed, _ = await check_rate(owner_id, "transcribe", 5)
         if not allowed:
             raise HTTPException(429, "free tier: 5 voice notes/day. upgrade for unlimited.")
+
+    if audio.size and audio.size > 25 * 1024 * 1024:
+        raise HTTPException(413, "audio too large (25MB max)")
 
     audio_bytes = await audio.read()
     if not audio_bytes:
