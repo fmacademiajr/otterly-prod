@@ -14,6 +14,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter } from "expo-router";
 import { LogOut, Sparkles, ChevronRight } from "lucide-react-native";
+import * as AppleAuthentication from "expo-apple-authentication";
 
 import { ScreenHeader } from "@/src/components/ScreenHeader";
 import { StreakStrip } from "@/src/components/StreakStrip";
@@ -32,7 +33,7 @@ const PRIVACY_URL = "https://getotterly.com/privacy";
 export default function YouScreen() {
   const { colors, isDark, mode, setMode } = useTheme();
   const router = useRouter();
-  const { user, status, signIn, signOut, deleteAccount } = useAuth();
+  const { user, status, signIn, signInWithApple, signOut, deleteAccount } = useAuth();
   const [stats, setStats] = useState<StreakStats | null>(null);
   const [access, setAccess] = useState<AccessSnapshot | null>(null);
   const [name, setName] = useState("");
@@ -42,7 +43,13 @@ export default function YouScreen() {
   const [voucherCode, setVoucherCode] = useState("");
   const [voucherBusy, setVoucherBusy] = useState(false);
   const [voucherMessage, setVoucherMessage] = useState<{ text: string; ok: boolean } | null>(null);
+  const [appleAvailable, setAppleAvailable] = useState(false);
+  const [signInError, setSignInError] = useState<string | null>(null);
   const deletingRef = useRef(false);
+
+  useEffect(() => {
+    AppleAuthentication.isAvailableAsync().then(setAppleAvailable);
+  }, []);
 
   const load = useCallback(async () => {
     try {
@@ -96,6 +103,24 @@ export default function YouScreen() {
       ]);
     }
   }, [deleteAccount]);
+
+  const handleGoogleSignIn = useCallback(async () => {
+    setSignInError(null);
+    try {
+      await signIn();
+    } catch {
+      setSignInError("Sign in didn't work. Try again.");
+    }
+  }, [signIn]);
+
+  const handleAppleSignIn = useCallback(async () => {
+    setSignInError(null);
+    try {
+      await signInWithApple();
+    } catch {
+      setSignInError("Sign in didn't work. Try again.");
+    }
+  }, [signInWithApple]);
 
   const handleRedeemVoucher = useCallback(async () => {
     const code = voucherCode.trim();
@@ -178,24 +203,45 @@ export default function YouScreen() {
               </TouchableOpacity>
             </View>
           ) : (
-            <TouchableOpacity
-              testID="signin"
-              onPress={signIn}
-              activeOpacity={0.7}
-              style={[styles.accountCard, { backgroundColor: colors.surface, borderColor: colors.border, flexDirection: "row", alignItems: "center", gap: spacing.md }]}
-            >
-              <View style={[styles.googleBadge, { borderColor: colors.border }]}>
-                <Text style={{ fontFamily: fonts.bodySemibold, fontSize: 18 }}>G</Text>
-              </View>
-              <View style={{ flex: 1 }}>
+            <View style={[styles.accountCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+              <TouchableOpacity
+                testID="signin"
+                onPress={handleGoogleSignIn}
+                activeOpacity={0.7}
+                style={{ flexDirection: "row", alignItems: "center", gap: spacing.md }}
+              >
+                <View style={[styles.googleBadge, { borderColor: colors.border }]}>
+                  <Text style={{ fontFamily: fonts.bodySemibold, fontSize: 18 }}>G</Text>
+                </View>
                 <Text style={{ color: colors.text, fontFamily: fonts.bodySemibold, fontSize: 16 }}>
                   Sign in with Google
                 </Text>
-                <Text style={{ color: colors.textMuted, fontFamily: fonts.body, fontSize: 13, marginTop: 2, lineHeight: 18 }}>
-                  Sync across devices. Required to purchase.
+              </TouchableOpacity>
+
+              {appleAvailable ? (
+                <AppleAuthentication.AppleAuthenticationButton
+                  testID="signin-apple"
+                  buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
+                  buttonStyle={
+                    isDark
+                      ? AppleAuthentication.AppleAuthenticationButtonStyle.WHITE
+                      : AppleAuthentication.AppleAuthenticationButtonStyle.BLACK
+                  }
+                  cornerRadius={radii.md}
+                  style={styles.appleButton}
+                  onPress={handleAppleSignIn}
+                />
+              ) : null}
+
+              <Text style={{ color: colors.textMuted, fontFamily: fonts.body, fontSize: 13, marginTop: spacing.md, lineHeight: 18 }}>
+                Sync across devices. Required to purchase.
+              </Text>
+              {signInError ? (
+                <Text style={{ color: colors.danger, fontFamily: fonts.body, fontSize: 13, marginTop: spacing.sm }}>
+                  {signInError}
                 </Text>
-              </View>
-            </TouchableOpacity>
+              ) : null}
+            </View>
           )}
 
           <TouchableOpacity
@@ -420,6 +466,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     alignItems: "center",
     justifyContent: "center",
+  },
+  appleButton: {
+    height: 44,
+    marginTop: spacing.md,
   },
   upgradeCard: {
     flexDirection: "row",

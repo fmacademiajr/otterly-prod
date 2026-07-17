@@ -172,6 +172,11 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ session_token, device_id }),
     }),
+  appleAuth: (identity_token: string, device_id?: string, full_name?: string) =>
+    req<StoredUser & { session_token: string; expires_at: string }>("/api/auth/apple", {
+      method: "POST",
+      body: JSON.stringify({ identity_token, device_id, full_name }),
+    }),
   me: () => req<StoredUser>("/api/auth/me"),
   logout: () => req<{ ok: boolean }>("/api/auth/logout", { method: "POST" }),
   deleteAccount: async () =>
