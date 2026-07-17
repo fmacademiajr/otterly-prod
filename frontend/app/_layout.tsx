@@ -10,14 +10,17 @@ import { useOtterFonts } from "@/src/hooks/use-otter-fonts";
 import { ThemeProvider, useTheme } from "@/src/theme/ThemeProvider";
 import { AuthProvider, useAuth } from "@/src/auth/AuthProvider";
 import { revenuecat } from "@/src/lib/revenuecat";
+import { initSentry, setUser as setSentryUser } from "@/src/lib/observability";
 
 LogBox.ignoreAllLogs(true);
 SplashScreen.preventAutoHideAsync();
+initSentry();
 
 function RevenueCatBootstrap() {
   const { user } = useAuth();
   useEffect(() => {
     revenuecat.initRevenueCat(user?.user_id);
+    setSentryUser(user?.user_id ?? null);
   }, [user?.user_id]);
   return null;
 }

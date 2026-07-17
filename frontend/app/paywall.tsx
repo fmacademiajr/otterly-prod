@@ -11,6 +11,7 @@ import { useRouter } from "expo-router";
 import { X, Check } from "lucide-react-native";
 
 import { OtterMascot } from "@/src/components/OtterMascot";
+import { FadeUp } from "@/src/components/animations";
 import { useTheme } from "@/src/theme/ThemeProvider";
 import { fonts, radii, spacing } from "@/src/theme/tokens";
 import { useAuth } from "@/src/auth/AuthProvider";
@@ -138,53 +139,54 @@ export default function PaywallScreen() {
 
         {/* Plans — horizontal 3 cards */}
         <View style={styles.planRow}>
-          {PLAN_ORDER.map((k) => {
+          {PLAN_ORDER.map((k, idx) => {
             const p = PLAN[k];
             const active = selected === k;
             return (
-              <TouchableOpacity
-                key={k}
-                testID={`plan-${k}`}
-                activeOpacity={0.85}
-                onPress={() => setSelected(k)}
-                style={[
-                  styles.planCard,
-                  {
-                    backgroundColor: colors.background,
-                    borderColor: active ? colors.accent : colors.warmBorder,
-                    borderWidth: active ? 2 : 1,
-                    transform: [{ translateY: active ? -8 : 0 }],
-                    zIndex: active ? 2 : 1,
-                  },
-                ]}
-              >
-                {p.best ? (
-                  <View style={[styles.bestPill, { backgroundColor: colors.accent }]}>
-                    <Text style={{ color: colors.onAccent, fontFamily: fonts.bodySemibold, fontSize: 10, letterSpacing: 1.5 }}>
-                      BEST
+              <FadeUp key={k} delay={100 + idx * 80} duration={340} style={{ flex: 1 }}>
+                <TouchableOpacity
+                  testID={`plan-${k}`}
+                  activeOpacity={0.85}
+                  onPress={() => setSelected(k)}
+                  style={[
+                    styles.planCard,
+                    {
+                      backgroundColor: colors.background,
+                      borderColor: active ? colors.accent : colors.warmBorder,
+                      borderWidth: active ? 2 : 1,
+                      transform: [{ translateY: active ? -8 : 0 }],
+                      zIndex: active ? 2 : 1,
+                    },
+                  ]}
+                >
+                  {p.best ? (
+                    <View style={[styles.bestPill, { backgroundColor: colors.accent }]}>
+                      <Text style={{ color: colors.onAccent, fontFamily: fonts.bodySemibold, fontSize: 10, letterSpacing: 1.5 }}>
+                        BEST
+                      </Text>
+                    </View>
+                  ) : null}
+                  {k === "founding" ? (
+                    <View style={{ alignItems: "center", marginBottom: spacing.sm }}>
+                      <OtterMascot size={72} variant="crown" />
+                    </View>
+                  ) : null}
+                  <Text style={[styles.planTitle, { color: k === "founding" ? colors.accent : colors.text, fontFamily: fonts.displayBold }]}>
+                    {p.title}
+                  </Text>
+                  <View style={styles.priceRow}>
+                    <Text style={[styles.priceMain, { color: colors.text, fontFamily: fonts.displayBold }]}>
+                      {p.price}
+                    </Text>
+                    <Text style={[styles.priceUnit, { color: colors.textMuted, fontFamily: fonts.body }]}>
+                      {p.unit}
                     </Text>
                   </View>
-                ) : null}
-                {k === "founding" ? (
-                  <View style={{ alignItems: "center", marginBottom: spacing.sm }}>
-                    <OtterMascot size={72} variant="crown" />
-                  </View>
-                ) : null}
-                <Text style={[styles.planTitle, { color: k === "founding" ? colors.accent : colors.text, fontFamily: fonts.displayBold }]}>
-                  {p.title}
-                </Text>
-                <View style={styles.priceRow}>
-                  <Text style={[styles.priceMain, { color: colors.text, fontFamily: fonts.displayBold }]}>
-                    {p.price}
+                  <Text style={[styles.planSub, { color: colors.textMuted, fontFamily: fonts.body }]}>
+                    {p.sub}
                   </Text>
-                  <Text style={[styles.priceUnit, { color: colors.textMuted, fontFamily: fonts.body }]}>
-                    {p.unit}
-                  </Text>
-                </View>
-                <Text style={[styles.planSub, { color: colors.textMuted, fontFamily: fonts.body }]}>
-                  {p.sub}
-                </Text>
-              </TouchableOpacity>
+                </TouchableOpacity>
+              </FadeUp>
             );
           })}
         </View>

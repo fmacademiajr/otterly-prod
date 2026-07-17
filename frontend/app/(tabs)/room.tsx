@@ -16,6 +16,7 @@ import { useRouter } from "expo-router";
 import Svg, { Path } from "react-native-svg";
 
 import { api, type RoomMessage } from "@/src/lib/api";
+import { OtterMascot } from "@/src/components/OtterMascot";
 import { useTheme } from "@/src/theme/ThemeProvider";
 import { fonts, radii, spacing } from "@/src/theme/tokens";
 import { storage } from "@/src/utils/storage";
@@ -141,15 +142,17 @@ export default function RoomScreen() {
           >
             <LifeBuoy size={14} color={colors.danger} strokeWidth={2} />
             <Text style={{ color: colors.text, fontFamily: fonts.body, fontSize: 13, marginLeft: 6 }}>
-              If you're in crisis
+              If you&apos;re in crisis
             </Text>
           </TouchableOpacity>
+
+          <OtterMascot size={130} variant={sending ? "working" : "focus"} />
 
           <Text
             testID="room-title"
             style={[styles.title, { color: colors.text, fontFamily: fonts.displayBold }]}
           >
-            I'm here.
+            I&apos;m here.
           </Text>
         </View>
 
@@ -220,8 +223,9 @@ const styles = StyleSheet.create({
   safe: { flex: 1 },
   band: {
     paddingTop: spacing.md,
-    paddingBottom: spacing.xl,
+    paddingBottom: spacing.lg,
     alignItems: "center",
+    gap: spacing.md,
   },
   crisisPill: {
     flexDirection: "row",
@@ -232,7 +236,7 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     marginBottom: spacing.lg,
   },
-  title: { fontSize: 44, lineHeight: 54 },
+  title: { fontSize: 40, lineHeight: 48, marginTop: 0 },
   list: { padding: spacing.lg, gap: spacing.md, paddingBottom: spacing.xxl },
   bubble: {
     maxWidth: "82%",

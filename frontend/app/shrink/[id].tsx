@@ -14,6 +14,7 @@ import * as Haptics from "expo-haptics";
 
 import { SoftExit } from "@/src/components/OtterButton";
 import { OtterMascot } from "@/src/components/OtterMascot";
+import { FadeUp } from "@/src/components/animations";
 import { api, ApiError, type Step, type Task } from "@/src/lib/api";
 import { useTheme } from "@/src/theme/ThemeProvider";
 import { fonts, radii, spacing } from "@/src/theme/tokens";
@@ -260,60 +261,61 @@ export default function ShrinkScreen() {
           steps.map((step, i) => {
             const isActive = activeStep === step.id;
             return (
-              <View
-                key={step.id}
-                testID={`step-${step.id}`}
-                style={[
-                  styles.stepCard,
-                  { backgroundColor: colors.background, borderColor: isActive ? colors.primary : "transparent", borderWidth: isActive ? 1.5 : 0 },
-                ]}
-              >
-                <TouchableOpacity
-                  testID={`step-toggle-${step.id}`}
-                  onPress={() => toggle(step)}
-                  activeOpacity={0.6}
+              <FadeUp key={step.id} delay={i * 60} duration={320}>
+                <View
+                  testID={`step-${step.id}`}
                   style={[
-                    styles.checkboxLg,
-                    {
-                      borderColor: colors.primary,
-                      backgroundColor: step.done ? colors.primary : "transparent",
-                    },
+                    styles.stepCard,
+                    { backgroundColor: colors.background, borderColor: isActive ? colors.primary : "transparent", borderWidth: isActive ? 1.5 : 0 },
                   ]}
                 >
-                  {step.done ? <Check color={colors.onPrimary} size={22} strokeWidth={2.5} /> : null}
-                </TouchableOpacity>
-                <Text
-                  style={[
-                    styles.stepText,
-                    {
-                      color: step.done ? colors.textSubtle : colors.text,
-                      fontFamily: fonts.bodySemibold,
-                      textDecorationLine: step.done ? "line-through" : "none",
-                    },
-                  ]}
-                >
-                  {i + 1}. {step.text}
-                </Text>
-                <TouchableOpacity
-                  testID={`step-timer-${step.id}`}
-                  onPress={() => startTimer(step)}
-                  disabled={step.done}
-                  style={[
-                    styles.timerPill,
-                    { backgroundColor: step.done ? colors.warmBorder : colors.primarySurfaceStrong },
-                  ]}
-                >
-                  <Play size={11} color={colors.primary} fill={colors.primary} strokeWidth={0} />
-                  <Text style={{
-                    color: colors.primary,
-                    fontFamily: fonts.numeric,
-                    fontSize: 13,
-                    marginLeft: 4,
-                  }}>
-                    {step.minutes} min
+                  <TouchableOpacity
+                    testID={`step-toggle-${step.id}`}
+                    onPress={() => toggle(step)}
+                    activeOpacity={0.6}
+                    style={[
+                      styles.checkboxLg,
+                      {
+                        borderColor: colors.primary,
+                        backgroundColor: step.done ? colors.primary : "transparent",
+                      },
+                    ]}
+                  >
+                    {step.done ? <Check color={colors.onPrimary} size={22} strokeWidth={2.5} /> : null}
+                  </TouchableOpacity>
+                  <Text
+                    style={[
+                      styles.stepText,
+                      {
+                        color: step.done ? colors.textSubtle : colors.text,
+                        fontFamily: fonts.bodySemibold,
+                        textDecorationLine: step.done ? "line-through" : "none",
+                      },
+                    ]}
+                  >
+                    {i + 1}. {step.text}
                   </Text>
-                </TouchableOpacity>
-              </View>
+                  <TouchableOpacity
+                    testID={`step-timer-${step.id}`}
+                    onPress={() => startTimer(step)}
+                    disabled={step.done}
+                    style={[
+                      styles.timerPill,
+                      { backgroundColor: step.done ? colors.warmBorder : colors.primarySurfaceStrong },
+                    ]}
+                  >
+                    <Play size={11} color={colors.primary} fill={colors.primary} strokeWidth={0} />
+                    <Text style={{
+                      color: colors.primary,
+                      fontFamily: fonts.numeric,
+                      fontSize: 13,
+                      marginLeft: 4,
+                    }}>
+                      {step.minutes} min
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </FadeUp>
             );
           })
         )}

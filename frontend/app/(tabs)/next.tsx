@@ -15,6 +15,7 @@ import Svg, { Path } from "react-native-svg";
 import { EnergyPill } from "@/src/components/EnergyPill";
 import { OtterMascot } from "@/src/components/OtterMascot";
 import { OtterButton } from "@/src/components/OtterButton";
+import { FadeUp } from "@/src/components/animations";
 import { api, type Energy, type NextResponse } from "@/src/lib/api";
 import { useTheme } from "@/src/theme/ThemeProvider";
 import { fonts, radii, spacing } from "@/src/theme/tokens";
@@ -163,38 +164,40 @@ export default function NextScreen() {
             <CardWave color={colors.textSubtle} />
           </View>
         ) : (
-          <View style={[styles.card, { borderColor: colors.border }]} testID="next-card">
-            <Text style={[styles.eyebrow, { color: colors.text, fontFamily: fonts.bodySemibold }]}>
-              DO THIS NEXT
-            </Text>
-            <Text
-              style={[styles.taskTitle, { color: colors.text, fontFamily: fonts.displayBold }]}
-              testID="next-step-text"
-            >
-              {data.step.text}
-            </Text>
-            <View style={[styles.minutesPill, { backgroundColor: colors.primary }]}>
-              <Text style={[styles.minutesText, { color: colors.onPrimary, fontFamily: fonts.numeric }]}>
-                {data.step.minutes} min
+          <FadeUp key={data.step.id} duration={360}>
+            <View style={[styles.card, { borderColor: colors.border }]} testID="next-card">
+              <Text style={[styles.eyebrow, { color: colors.text, fontFamily: fonts.bodySemibold }]}>
+                DO THIS NEXT
               </Text>
-            </View>
-            {data.task?.title ? (
               <Text
-                style={[styles.parent, { color: colors.textMuted, fontFamily: fonts.body }]}
-                numberOfLines={1}
+                style={[styles.taskTitle, { color: colors.text, fontFamily: fonts.displayBold }]}
+                testID="next-step-text"
               >
-                Parent task: {data.task.title}
+                {data.step.text}
               </Text>
-            ) : null}
-            {data.reason ? (
-              <View style={[styles.reasonBand, { backgroundColor: colors.accentSurface }]}>
-                <Text style={[styles.reasonText, { color: colors.accent, fontFamily: fonts.body }]}>
-                  {data.reason}
+              <View style={[styles.minutesPill, { backgroundColor: colors.primary }]}>
+                <Text style={[styles.minutesText, { color: colors.onPrimary, fontFamily: fonts.numeric }]}>
+                  {data.step.minutes} min
                 </Text>
               </View>
-            ) : null}
-            <CardWave color={colors.textSubtle} />
-          </View>
+              {data.task?.title ? (
+                <Text
+                  style={[styles.parent, { color: colors.textMuted, fontFamily: fonts.body }]}
+                  numberOfLines={1}
+                >
+                  Parent task: {data.task.title}
+                </Text>
+              ) : null}
+              {data.reason ? (
+                <View style={[styles.reasonBand, { backgroundColor: colors.accentSurface }]}>
+                  <Text style={[styles.reasonText, { color: colors.accent, fontFamily: fonts.body }]}>
+                    {data.reason}
+                  </Text>
+                </View>
+              ) : null}
+              <CardWave color={colors.textSubtle} />
+            </View>
+          </FadeUp>
         )}
 
         <View style={{ height: spacing.xl }} />

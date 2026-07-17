@@ -43,6 +43,21 @@ MONGO_URL = os.environ["MONGO_URL"]
 DB_NAME = os.environ["DB_NAME"]
 EMERGENT_LLM_KEY = os.environ["EMERGENT_LLM_KEY"]
 REVENUECAT_WEBHOOK_SECRET = os.environ.get("REVENUECAT_WEBHOOK_SECRET", "")
+SENTRY_DSN = os.environ.get("SENTRY_DSN", "")
+
+# Sentry — only wires if a real DSN is set (never the "placeholder" value).
+if SENTRY_DSN and SENTRY_DSN != "placeholder":
+    try:
+        import sentry_sdk
+        from sentry_sdk.integrations.fastapi import FastApiIntegration
+        sentry_sdk.init(
+            dsn=SENTRY_DSN,
+            integrations=[FastApiIntegration()],
+            traces_sample_rate=0.1,
+            send_default_pii=False,
+        )
+    except Exception:
+        pass  # never let observability break the app
 
 EMERGENT_SESSION_DATA_URL = "https://demobackend.emergentagent.com/auth/v1/env/oauth/session-data"
 
