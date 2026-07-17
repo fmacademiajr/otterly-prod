@@ -135,7 +135,36 @@ Prerequisite for Apple. Ship as its own commit so a revert is surgical.
 
 **THE BOMB.** `_startup_indexes` (`:966-982`) is ONE `try` wrapping thirteen sequential `create_index` calls, and the `except` only logs a warning. `db.users.create_index("email", unique=True)` is line 969. Calling `create_index("email", unique=True, partialFilterExpression=...)` against the existing `email_1` raises `IndexOptionsConflict` (code 85) — which aborts every index AFTER it. That silently loses `user_sessions.session_token` uniqueness, the `expires_at` TTL, `rate_counters` uniqueness, and `webhook_events` idempotency. Silent loss of every uniqueness and expiry guarantee in the database.
 
-So the drop must come FIRST and must be in its OWN try/except:
+**ROOT-CAUSE FIX, REQUIRED (Fernando's call).** The email index is only the trigger. The real defect is that thirteen `create_index` calls share one `try`, so ANY future index change can silently disable every index below it. Fix the class, not the instance: drive the block from a list and give EACH index its own try/except, so one failure can never cascade. Log each failure by name — the current code cannot even tell you which index it lost.
+
+Shape (adapt, do not copy blindly):
+```python
+INDEX_SPECS = [
+    ("users", "email", dict(unique=True, partialFilterExpression={"email": {"$type": "string"}})),
+    ("users", "apple_sub", dict(unique=True, sparse=True)),
+    ("users", "user_id", dict(unique=True)),
+    ...  # every existing index, unchanged in meaning
+]
+
+@app.on_event("startup")
+async def _startup_indexes():
+    try:
+        await db.users.drop_index("email_1")   # one-time migration off the plain-unique index
+    except Exception:
+        pass                                    # absent on every boot after the first
+    for coll, keys, opts in INDEX_SPECS:
+        try:
+            await db[coll].create_index(keys, **opts)
+        except Exception as e:
+            logger.warning("index %s on %s failed: %s", keys, coll, e)
+```
+Compound-key indexes (`tasks`, `steps`, `activity`, `rate_counters`, `room_messages`) keep their list-of-tuples key form. Do not change any index's meaning — only how failures are contained.
+
+**Test both halves:**
+1. **No mongod needed:** assert every index in `INDEX_SPECS` is created inside its own try/except, i.e. one failure cannot abort the rest. The cheapest honest version: monkeypatch `db[coll].create_index` to raise on the FIRST spec, run `_startup_indexes()`, and assert the remaining specs were still attempted. That is the bomb, tested, with no database.
+2. **Live test, needs Docker (not currently running):** write `backend/tests/test_indexes_live.py` and SKIP it with a clear reason when no mongod is reachable at `MONGO_URL`. When Docker is up it seeds the OLD plain-unique email index, runs `_startup_indexes()` twice, and asserts the full catalogue survived. Do not fake this with mongomock — it will not reproduce `IndexOptionsConflict` and would be false confidence.
+
+The drop must come FIRST and must be in its OWN try/except:
 
 ```python
 @app.on_event("startup")
