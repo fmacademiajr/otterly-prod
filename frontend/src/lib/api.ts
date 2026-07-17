@@ -174,4 +174,9 @@ export const api = {
     }),
   me: () => req<StoredUser>("/api/auth/me"),
   logout: () => req<{ ok: boolean }>("/api/auth/logout", { method: "POST" }),
+  deleteAccount: async () =>
+    req<{ ok: boolean; deleted: Record<string, number> }>("/api/account", {
+      method: "DELETE",
+      headers: { "X-Device-Id": await identity.getDeviceId() }, // Bearer survives the merge
+    }),
 };

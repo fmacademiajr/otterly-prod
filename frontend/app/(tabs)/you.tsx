@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import {
+  Alert,
+  Platform,
   ScrollView,
   StyleSheet,
   Switch,
@@ -24,7 +26,7 @@ import { useAuth } from "@/src/auth/AuthProvider";
 export default function YouScreen() {
   const { colors, isDark, mode, setMode } = useTheme();
   const router = useRouter();
-  const { user, status, signIn, signOut } = useAuth();
+  const { user, status, signIn, signOut, deleteAccount } = useAuth();
   const [stats, setStats] = useState<StreakStats | null>(null);
   const [access, setAccess] = useState<AccessSnapshot | null>(null);
   const [name, setName] = useState("");
@@ -53,6 +55,32 @@ export default function YouScreen() {
     if (loadedFromStorage) storage.setItem("otterly.reminderTime", reminder);
   }, [reminder, loadedFromStorage]);
 
+  const handleDeleteAccount = useCallback(async () => {
+    const message =
+      "This removes your tasks, braindumps, and Room chats. It cannot be undone.\n\n" +
+      "Deleting your account does not cancel a subscription. Cancel it in Settings, Apple ID, Subscriptions.\n\n" +
+      "Signed in with Apple? Revoke access in Settings, your name, Sign in with Apple, Otterly.";
+
+    const run = async () => {
+      try {
+        await deleteAccount();
+      } catch {
+        const failMsg = "Delete didn't finish. Try again.";
+        if (Platform.OS === "web") window.alert(failMsg);
+        else Alert.alert("Delete didn't finish", "Try again.");
+      }
+    };
+
+    if (Platform.OS === "web") {
+      if (window.confirm(`Delete your account?\n\n${message}`)) await run();
+    } else {
+      Alert.alert("Delete your account?", message, [
+        { text: "Cancel", style: "cancel" },
+        { text: "Delete", style: "destructive", onPress: run },
+      ]);
+    }
+  }, [deleteAccount]);
+
   const days = stats?.days_this_week ?? 0;
   const streakLine =
     days === 0 ? "This week is still fresh."
@@ -62,14 +90,14 @@ export default function YouScreen() {
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: colors.background }]} edges={["top"]}>
       <ScrollView contentContainerStyle={{ paddingBottom: spacing.xxl }} showsVerticalScrollIndicator={false}>
-        <ScreenHeader eyebrow="you" title="Your Progress Profile." />
+        <ScreenHeader title={name ? `Hi, ${name}.` : "You."} />
 
         <View style={[styles.streakWrap, { backgroundColor: colors.background }]} testID="streak-strip">
           {/* The otter's expression may reflect the present session. It may never
-              reflect the user's record. This mapped mood to streak count, so a week
-              away put a sleeping otter on a screen titled "Your Progress Profile".
-              That is guilt contingency, the Finch mechanic this app exists against.
-              At rest, present, always. */}
+              reflect the user's record. This screen was once titled "Your Progress
+              Profile", and mapping mood to streak count put a sleeping otter on it
+              after a week away. That is guilt contingency, the Finch mechanic this
+              app exists against. At rest, present, always. */}
           <OtterMascot size={110} variant="float" />
           <View style={{ height: spacing.lg }} />
           <StreakStrip daysActive={days} size={44} />
@@ -196,6 +224,21 @@ export default function YouScreen() {
                 thumbColor="#FFFFFF"
               />
             </View>
+            {status === "authed" ? (
+              <>
+                <View style={[styles.divider, { backgroundColor: colors.border }]} />
+                <TouchableOpacity
+                  testID="delete-account"
+                  style={styles.row}
+                  onPress={handleDeleteAccount}
+                >
+                  <Text style={[styles.rowLabel, { color: colors.danger, fontFamily: fonts.bodySemibold }]}>
+                    Delete account
+                  </Text>
+                  <ChevronRight size={18} color={colors.danger} strokeWidth={1.4} />
+                </TouchableOpacity>
+              </>
+            ) : null}
           </View>
 
           <TouchableOpacity

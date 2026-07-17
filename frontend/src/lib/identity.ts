@@ -90,4 +90,10 @@ export const identity = {
   async clearUser() {
     await storage.setItem(USER_KEY, null);
   },
+
+  async reset() {
+    await secureDelete(TOKEN_KEY);
+    await storage.setItem(USER_KEY, null);
+    await storage.removeItem(DEVICE_KEY); // getDeviceId() mints a fresh uuid next call
+  },
 };

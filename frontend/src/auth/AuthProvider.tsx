@@ -5,12 +5,14 @@ import * as Linking from "expo-linking";
 
 import { identity, type StoredUser } from "@/src/lib/identity";
 import { api, ApiError } from "@/src/lib/api";
+import { storage } from "@/src/utils/storage";
 
 type AuthCtx = {
   status: "loading" | "authed" | "anonymous";
   user: StoredUser | null;
   signIn: () => Promise<void>;
   signOut: () => Promise<void>;
+  deleteAccount: () => Promise<void>;
   refresh: () => Promise<void>;
 };
 
@@ -137,9 +139,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setStatus("anonymous");
   }, []);
 
+  const deleteAccount = useCallback(async () => {
+    await api.deleteAccount(); // throws → caller shows error, token kept for retry
+    await identity.reset();
+    await storage.removeItem("otterly.userName");
+    await storage.removeItem("otterly.reminderTime");
+    setUser(null);
+    setStatus("anonymous");
+  }, []);
+
   return (
     <AuthContext.Provider
-      value={{ status, user, signIn, signOut, refresh: bootstrap }}
+      value={{ status, user, signIn, signOut, deleteAccount, refresh: bootstrap }}
     >
       {children}
     </AuthContext.Provider>
