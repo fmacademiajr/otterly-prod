@@ -17,6 +17,7 @@ Endpoints all under /api. Auth endpoints:
   DELETE /api/account            delete account and all owned data
   GET    /api/me/access          entitlement snapshot { premium: bool, plan: str, limits }
   POST   /api/webhooks/revenuecat  RevenueCat webhook (HMAC-signed)
+  POST   /api/vouchers/redeem    redeem a free-access code (press/beta), require_user only
 """
 from fastapi import FastAPI, APIRouter, HTTPException, Request, Header, Depends, UploadFile, File
 from dotenv import load_dotenv
@@ -227,26 +228,46 @@ FREE_LIMITS = {"shrinks": 3, "braindumps": 5, "room_messages": 20}
 
 
 async def get_entitlement(owner_id: str, user_id: Optional[str]) -> dict:
-    """Return {'active': bool, 'plan': str}."""
+    """Return {'active': bool, 'plan': str}.
+
+    Two sources, resolved in order: db.entitlements (RevenueCat) first, then
+    db.vouchers. A real payer must NEVER be downgraded by a lapsed voucher, so
+    an active paid entitlement returns immediately — the voucher is never even
+    read in that case.
+    """
     if not user_id:
         return {"active": False, "plan": "free"}
+    now_ms = datetime.now(timezone.utc).timestamp() * 1000
+
     doc = await db.entitlements.find_one({"user_id": user_id}, {"_id": 0})
-    if not doc:
-        return {"active": False, "plan": "free"}
-    prem = doc.get("premium") or {}
-    active = bool(prem.get("active"))
+    plan = "free"
+    active = False
+    if doc:
+        prem = doc.get("premium") or {}
+        active = bool(prem.get("active"))
+        plan = prem.get("product_id") or "free"
 
-    # ponytail: the webhook writes expires_at_ms and nothing ever read it, so one
-    # dropped EXPIRATION meant premium forever. Belt and braces on top of the
-    # webhook, not instead of it.
-    # The lifetime tier has NO expires_at_ms — absent must mean "never expires",
-    # never "expired at epoch 0".
-    expires_ms = prem.get("expires_at_ms")
-    if active and expires_ms:
-        if float(expires_ms) < datetime.now(timezone.utc).timestamp() * 1000:
-            active = False
+        # ponytail: the webhook writes expires_at_ms and nothing ever read it, so one
+        # dropped EXPIRATION meant premium forever. Belt and braces on top of the
+        # webhook, not instead of it.
+        # The lifetime tier has NO expires_at_ms — absent must mean "never expires",
+        # never "expired at epoch 0".
+        expires_ms = prem.get("expires_at_ms")
+        if active and expires_ms:
+            if float(expires_ms) < now_ms:
+                active = False
 
-    return {"active": active, "plan": prem.get("product_id") or "free"}
+    if active:
+        return {"active": True, "plan": plan}
+
+    # No active paid entitlement — check for a redeemed, unexpired voucher.
+    voucher = await db.vouchers.find_one({"redeemed_by": user_id}, {"_id": 0})
+    if voucher:
+        v_expires = voucher.get("expires_at_ms")
+        if v_expires is None or float(v_expires) >= now_ms:
+            return {"active": True, "plan": "voucher"}
+
+    return {"active": False, "plan": plan}
 
 
 async def check_rate(owner_id: str, kind: str, cap: int) -> Tuple[bool, int]:
@@ -445,6 +466,14 @@ async def delete_account(
             deleted[name] = (await db[name].delete_many({"owner": {"$in": owners}})).deleted_count
         for name in USER_ID_COLLECTIONS:
             deleted[name] = (await db[name].delete_many({"user_id": uid})).deleted_count
+        # vouchers: keyed on `redeemed_by`, a THIRD key (neither owner nor user_id) —
+        # one doc per CODE, not per person, so it cannot join the loops above. Burn,
+        # don't release: deleting the doc removes the PII (redeemed_by) AND makes the
+        # code permanently unredeemable (unknown code, 404) in one call. Clearing
+        # redeemed_by back to None instead would put the code back in play — the same
+        # person (or anyone who still has the code) could redeem, delete, and
+        # re-redeem it forever, defeating the whole point of a bounded giveaway.
+        deleted["vouchers"] = (await db.vouchers.delete_many({"redeemed_by": uid})).deleted_count
         deleted["users"] = (await db.users.delete_many({"user_id": uid})).deleted_count
     except Exception:
         logger.exception("account delete partial user_id=%s deleted=%s", uid, deleted)
@@ -472,6 +501,76 @@ async def me_access(who=Depends(resolve_owner)):
             "room_cap": FREE_LIMITS["room_messages"] if not ent["active"] else -1,
         },
     )
+
+
+# ---------- Vouchers ----------
+# db.vouchers: ONE doc per CODE, not per redemption. Minted by scripts/mint_vouchers.py
+# (no admin HTTP endpoint — adding a privileged route days before submission is a new
+# attack surface for no benefit). Never writes into db.entitlements: that document is
+# the RevenueCat webhook's row, and a voucher write there could be stomped by a later
+# RC event (or stomp one). Different lifecycle, different source of truth, no shared row.
+
+VOUCHER_ATTEMPTS_CAP = 10  # per user per day — without this the endpoint is a free
+                           # brute-force oracle over the code space.
+
+
+class VoucherRedeem(BaseModel):
+    code: str = Field(max_length=64)
+
+
+class VoucherRedeemResponse(BaseModel):
+    ok: bool
+    plan: str
+    expires_at_ms: Optional[int] = None
+
+
+def _normalize_voucher_code(raw: str) -> str:
+    """Uppercase, strip whitespace and dashes — 'otter xxxx xxxx' must find 'OTTERXXXXXXXX'.
+    Codes are stored normalised (no dashes); mint_vouchers.py prints the dashed,
+    human-readable form but writes this form to the db."""
+    return re.sub(r"[\s\-]+", "", raw or "").upper()
+
+
+@api.post("/vouchers/redeem", response_model=VoucherRedeemResponse)
+async def redeem_voucher(payload: VoucherRedeem, user: UserProfile = Depends(require_user)):
+    """require_user, never resolve_owner — a grant must attach to a real account,
+    not a device."""
+    allowed, _ = await check_rate(user.user_id, "voucher", VOUCHER_ATTEMPTS_CAP)
+    if not allowed:
+        raise HTTPException(429, "too many code attempts today. try again tomorrow.")
+    await bump_rate(user.user_id, "voucher")
+
+    code = _normalize_voucher_code(payload.code)
+    doc = await db.vouchers.find_one({"code": code}, {"_id": 0})
+    if not doc:
+        raise HTTPException(404, "we don't recognize that code. check it and try again.")
+
+    now_ms = datetime.now(timezone.utc).timestamp() * 1000
+    expires_ms = doc.get("expires_at_ms")
+    if expires_ms and float(expires_ms) < now_ms:
+        raise HTTPException(410, "this code has expired.")
+
+    if doc.get("redeemed_by") == user.user_id:
+        return VoucherRedeemResponse(ok=True, plan="voucher", expires_at_ms=expires_ms)
+
+    # Atomic test-and-set. A find-then-write (check redeemed_by is None, then
+    # unconditionally set it) leaves a race window: two concurrent redemptions can
+    # both read None before either writes, and both would then succeed. Gating the
+    # WRITE itself on {"redeemed_by": None} makes MongoDB the referee — only one
+    # update_one can match, the other gets modified_count == 0. This filter, not the
+    # read above, is the actual lock. It also doubles as the "already redeemed by
+    # someone else" check, since that case fails to match for the same reason.
+    result = await db.vouchers.update_one(
+        {"code": code, "redeemed_by": None},
+        {"$set": {
+            "redeemed_by": user.user_id,
+            "redeemed_at": datetime.now(timezone.utc).isoformat(),
+        }},
+    )
+    if result.modified_count == 0:
+        raise HTTPException(409, "this code has already been used.")
+
+    return VoucherRedeemResponse(ok=True, plan="voucher", expires_at_ms=expires_ms)
 
 
 # ---------- RevenueCat webhook ----------
@@ -1073,6 +1172,16 @@ async def _startup_indexes():
         await db.room_messages.create_index([("owner", 1), ("session_id", 1), ("created_at", 1)])
     except Exception as e:
         logger.warning("index creation warning: %s", e)
+
+    # ponytail: OWN try/except, deliberately not folded into the block above. Task 3
+    # found that block silently destroyed 5 of 5 indexes (incl. the session TTL) on a
+    # single conflict against a real mongod — one bad index must never take the rest
+    # down with it. This isolates vouchers from that blast radius; it does not fix it.
+    try:
+        await db.vouchers.create_index("code", unique=True)
+        await db.vouchers.create_index("redeemed_by")
+    except Exception as e:
+        logger.warning("vouchers index creation warning: %s", e)
 
 
 @app.on_event("shutdown")

@@ -179,4 +179,11 @@ export const api = {
       method: "DELETE",
       headers: { "X-Device-Id": await identity.getDeviceId() }, // Bearer survives the merge
     }),
+
+  // Vouchers
+  redeemVoucher: (code: string) =>
+    req<{ ok: boolean; plan: string; expires_at_ms?: number | null }>("/api/vouchers/redeem", {
+      method: "POST",
+      body: JSON.stringify({ code }),
+    }),
 };

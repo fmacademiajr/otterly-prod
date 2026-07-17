@@ -17,7 +17,7 @@ import { LogOut, Sparkles, ChevronRight } from "lucide-react-native";
 import { ScreenHeader } from "@/src/components/ScreenHeader";
 import { StreakStrip } from "@/src/components/StreakStrip";
 import { OtterMascot } from "@/src/components/OtterMascot";
-import { api, type StreakStats, type AccessSnapshot } from "@/src/lib/api";
+import { api, ApiError, type StreakStats, type AccessSnapshot } from "@/src/lib/api";
 import { useTheme } from "@/src/theme/ThemeProvider";
 import { fonts, radii, spacing } from "@/src/theme/tokens";
 import { storage } from "@/src/utils/storage";
@@ -32,6 +32,10 @@ export default function YouScreen() {
   const [name, setName] = useState("");
   const [reminder, setReminder] = useState("20:00");
   const [loadedFromStorage, setLoadedFromStorage] = useState(false);
+  const [voucherOpen, setVoucherOpen] = useState(false);
+  const [voucherCode, setVoucherCode] = useState("");
+  const [voucherBusy, setVoucherBusy] = useState(false);
+  const [voucherMessage, setVoucherMessage] = useState<{ text: string; ok: boolean } | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -80,6 +84,35 @@ export default function YouScreen() {
       ]);
     }
   }, [deleteAccount]);
+
+  const handleRedeemVoucher = useCallback(async () => {
+    const code = voucherCode.trim();
+    if (!code || voucherBusy) return;
+    setVoucherBusy(true);
+    setVoucherMessage(null);
+    try {
+      const res = await api.redeemVoucher(code);
+      const until = res.expires_at_ms
+        ? new Date(res.expires_at_ms).toLocaleDateString(undefined, {
+            year: "numeric",
+            month: "long",
+            day: "numeric",
+          })
+        : null;
+      setVoucherMessage({
+        text: until ? `You have Otter Premium until ${until}.` : "You have Otter Premium.",
+        ok: true,
+      });
+      setVoucherCode("");
+      const a = await api.access();
+      setAccess(a);
+    } catch (e) {
+      const detail = e instanceof ApiError ? e.detail : "That didn't work. Try again.";
+      setVoucherMessage({ text: detail, ok: false });
+    } finally {
+      setVoucherBusy(false);
+    }
+  }, [voucherCode, voucherBusy]);
 
   const days = stats?.days_this_week ?? 0;
   const streakLine =
@@ -226,6 +259,77 @@ export default function YouScreen() {
             </View>
             {status === "authed" ? (
               <>
+                <View style={[styles.divider, { backgroundColor: colors.border }]} />
+                <TouchableOpacity
+                  testID="voucher-toggle"
+                  style={styles.row}
+                  onPress={() => {
+                    setVoucherOpen((v) => !v);
+                    setVoucherMessage(null);
+                  }}
+                >
+                  <Text style={[styles.rowLabel, { color: colors.text, fontFamily: fonts.bodySemibold }]}>
+                    Have a voucher?
+                  </Text>
+                  <ChevronRight
+                    size={18}
+                    color={colors.textSubtle}
+                    strokeWidth={1.4}
+                    style={{ transform: [{ rotate: voucherOpen ? "90deg" : "0deg" }] }}
+                  />
+                </TouchableOpacity>
+                {voucherOpen ? (
+                  <View style={{ paddingHorizontal: spacing.base, paddingBottom: spacing.base }}>
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm }}>
+                      <TextInput
+                        testID="voucher-input"
+                        value={voucherCode}
+                        onChangeText={setVoucherCode}
+                        placeholder="OTTER-XXXX-XXXX"
+                        placeholderTextColor={colors.textSubtle}
+                        autoCapitalize="characters"
+                        autoCorrect={false}
+                        onSubmitEditing={handleRedeemVoucher}
+                        style={[
+                          styles.rowLabel,
+                          {
+                            flex: 1,
+                            color: colors.text,
+                            fontFamily: fonts.numeric,
+                            borderWidth: 1,
+                            borderColor: colors.border,
+                            borderRadius: radii.md,
+                            paddingHorizontal: spacing.sm,
+                            paddingVertical: spacing.sm,
+                          },
+                        ]}
+                      />
+                      <TouchableOpacity
+                        testID="voucher-submit"
+                        onPress={handleRedeemVoucher}
+                        disabled={voucherBusy || !voucherCode.trim()}
+                        style={{ opacity: voucherBusy || !voucherCode.trim() ? 0.5 : 1 }}
+                      >
+                        <Text style={{ color: colors.primary, fontFamily: fonts.bodySemibold, fontSize: 15 }}>
+                          {voucherBusy ? "Checking…" : "Apply"}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                    {voucherMessage ? (
+                      <Text
+                        testID="voucher-message"
+                        style={{
+                          color: voucherMessage.ok ? colors.primary : colors.danger,
+                          fontFamily: fonts.body,
+                          fontSize: 13,
+                          marginTop: spacing.sm,
+                        }}
+                      >
+                        {voucherMessage.text}
+                      </Text>
+                    ) : null}
+                  </View>
+                ) : null}
                 <View style={[styles.divider, { backgroundColor: colors.border }]} />
                 <TouchableOpacity
                   testID="delete-account"
