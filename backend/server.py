@@ -163,7 +163,7 @@ class SessionExchangeRequest(BaseModel):
 
 class UserProfile(BaseModel):
     user_id: str
-    email: str
+    email: str = ""
     name: str
     picture: Optional[str] = None
 
@@ -1155,33 +1155,51 @@ app.add_middleware(
 )
 
 
+# Task 3: db.users.email is moving from a plain-unique index to a partial-unique
+# one (Apple users can have no email). A plain unique index treats missing/null as
+# a value, so two null emails would collide — partial only indexes docs where
+# email is an actual string. This spec list drives _startup_indexes: EVERY index
+# gets its own try/except so one conflict (e.g. the old email_1 vs. the new partial
+# version) can never silently cascade and take out unrelated indexes below it. Proven
+# against a real mongod (see task-3-report.md): the old single-try version lost the
+# session_token uniqueness, the expires_at TTL, rate_counters uniqueness, and
+# webhook_events idempotency on exactly this conflict. Preserve every index's
+# meaning exactly when editing this list — only how failures are contained changed.
+INDEX_SPECS = [
+    ("users", "email", dict(unique=True, partialFilterExpression={"email": {"$type": "string"}})),
+    ("users", "apple_sub", dict(unique=True, sparse=True)),
+    ("users", "user_id", dict(unique=True)),
+    ("user_sessions", "session_token", dict(unique=True)),
+    ("user_sessions", "user_id", dict()),
+    ("user_sessions", "expires_at", dict(expireAfterSeconds=0)),
+    ("tasks", [("owner", 1), ("created_at", -1)], dict()),
+    ("steps", [("owner", 1), ("task_id", 1), ("order", 1)], dict()),
+    ("activity", [("owner", 1), ("date", 1)], dict()),
+    ("rate_counters", [("owner", 1), ("kind", 1), ("date", 1)], dict(unique=True)),
+    ("webhook_events", "event_id", dict(unique=True)),
+    ("entitlements", "user_id", dict(unique=True)),
+    ("room_messages", [("owner", 1), ("session_id", 1), ("created_at", 1)], dict()),
+    ("vouchers", "code", dict(unique=True)),
+    ("vouchers", "redeemed_by", dict()),
+]
+
+
 @app.on_event("startup")
 async def _startup_indexes():
+    # One-time migration off the plain-unique email index. ISOLATED try/except by
+    # necessity: on the second boot email_1 is already gone and drop_index raises
+    # OperationFailure. Inside the loop below, that raise would abort every index
+    # after it, silently, which is exactly the bomb this task fixes.
     try:
-        await db.users.create_index("email", unique=True)
-        await db.users.create_index("user_id", unique=True)
-        await db.user_sessions.create_index("session_token", unique=True)
-        await db.user_sessions.create_index("user_id")
-        await db.user_sessions.create_index("expires_at", expireAfterSeconds=0)
-        await db.tasks.create_index([("owner", 1), ("created_at", -1)])
-        await db.steps.create_index([("owner", 1), ("task_id", 1), ("order", 1)])
-        await db.activity.create_index([("owner", 1), ("date", 1)])
-        await db.rate_counters.create_index([("owner", 1), ("kind", 1), ("date", 1)], unique=True)
-        await db.webhook_events.create_index("event_id", unique=True)
-        await db.entitlements.create_index("user_id", unique=True)
-        await db.room_messages.create_index([("owner", 1), ("session_id", 1), ("created_at", 1)])
-    except Exception as e:
-        logger.warning("index creation warning: %s", e)
+        await db.users.drop_index("email_1")
+    except Exception:
+        pass
 
-    # ponytail: OWN try/except, deliberately not folded into the block above. Task 3
-    # found that block silently destroyed 5 of 5 indexes (incl. the session TTL) on a
-    # single conflict against a real mongod — one bad index must never take the rest
-    # down with it. This isolates vouchers from that blast radius; it does not fix it.
-    try:
-        await db.vouchers.create_index("code", unique=True)
-        await db.vouchers.create_index("redeemed_by")
-    except Exception as e:
-        logger.warning("vouchers index creation warning: %s", e)
+    for coll, keys, opts in INDEX_SPECS:
+        try:
+            await db[coll].create_index(keys, **opts)
+        except Exception as e:
+            logger.warning("index %s on %s failed: %s", keys, coll, e)
 
 
 @app.on_event("shutdown")
