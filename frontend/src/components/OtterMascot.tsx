@@ -13,11 +13,12 @@ import Svg, { Path, Circle, Ellipse, G } from "react-native-svg";
  *   "peek"    — smaller floating head (used inline)
  */
 
-type Variant = "default" | "crown" | "peek" | "line" | "line-peek" | "focus" | "working" | "celebrate" | "float" | "wave" | "sleep";
+type Variant = "default" | "crown" | "peek" | "line" | "line-peek" | "focus" | "focused" | "working" | "celebrate" | "float" | "wave" | "sleep";
 
 const IMAGE_ASSETS: Record<Variant, any> = {
   default: require("@/assets/otter/otter-default.png"),
   focus: require("@/assets/otter/otter-focus.png"),
+  focused: require("@/assets/otter/otter-focused.png"),
   working: require("@/assets/otter/otter-working.png"),
   celebrate: require("@/assets/otter/otter-celebrate.png"),
   float: require("@/assets/otter/otter-float.png"),

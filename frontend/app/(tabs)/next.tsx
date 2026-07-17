@@ -141,6 +141,9 @@ export default function NextScreen() {
           </View>
         ) : data?.empty || !data?.step ? (
           <View style={[styles.card, { borderColor: colors.border }]} testID="next-empty">
+            <View style={{ alignItems: "center", marginBottom: spacing.base }}>
+              <OtterMascot size={100} variant="sleep" />
+            </View>
             <Text style={[styles.eyebrow, { color: colors.text, fontFamily: fonts.bodySemibold }]}>
               NOTHING SHRUNK YET
             </Text>

@@ -13,6 +13,7 @@ import { Check, X, RotateCcw, Play, Pause, Sparkles, Square } from "lucide-react
 import * as Haptics from "expo-haptics";
 
 import { SoftExit } from "@/src/components/OtterButton";
+import { OtterMascot } from "@/src/components/OtterMascot";
 import { api, ApiError, type Step, type Task } from "@/src/lib/api";
 import { useTheme } from "@/src/theme/ThemeProvider";
 import { fonts, radii, spacing } from "@/src/theme/tokens";
@@ -158,12 +159,15 @@ export default function ShrinkScreen() {
               ? <Pause size={22} color={colors.primary} fill={colors.primary} strokeWidth={0} />
               : <Play size={22} color={colors.primary} fill={colors.primary} strokeWidth={0} />}
           </TouchableOpacity>
-          <Text
-            testID="timer-text"
-            style={[styles.timerText, { color: colors.onPrimary, fontFamily: fonts.numeric }]}
-          >
-            {mm}:{ss}
-          </Text>
+          <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.md }}>
+            <OtterMascot size={44} variant="focused" />
+            <Text
+              testID="timer-text"
+              style={[styles.timerText, { color: colors.onPrimary, fontFamily: fonts.numeric }]}
+            >
+              {mm}:{ss}
+            </Text>
+          </View>
           <TouchableOpacity
             testID="timer-stop"
             onPress={stopTimer}
@@ -314,6 +318,21 @@ export default function ShrinkScreen() {
           })
         )}
 
+        {/* Celebration banner when all steps are done */}
+        {steps.length > 0 && steps.every((s) => s.done) ? (
+          <View style={[styles.celebrateBanner, { backgroundColor: colors.primarySurface, borderColor: colors.primary }]}>
+            <OtterMascot size={70} variant="celebrate" />
+            <View style={{ flex: 1, marginLeft: spacing.base }}>
+              <Text style={{ color: colors.primary, fontFamily: fonts.displayBold, fontSize: 18 }}>
+                Every step done.
+              </Text>
+              <Text style={{ color: colors.textMuted, fontFamily: fonts.body, fontSize: 14, marginTop: 4 }}>
+                That&apos;s real. Come back later.
+              </Text>
+            </View>
+          </View>
+        ) : null}
+
         <View style={{ height: spacing.lg }} />
         <TouchableOpacity
           testID="deep-shrink"
@@ -421,6 +440,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.base,
     paddingVertical: spacing.md,
     alignSelf: "center",
+    marginBottom: spacing.md,
+  },
+  celebrateBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderWidth: 1,
+    borderRadius: radii.lg,
+    padding: spacing.base,
     marginBottom: spacing.md,
   },
 });

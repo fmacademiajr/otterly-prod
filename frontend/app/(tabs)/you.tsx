@@ -14,6 +14,7 @@ import { LogOut, Sparkles, ChevronRight } from "lucide-react-native";
 
 import { ScreenHeader } from "@/src/components/ScreenHeader";
 import { StreakStrip } from "@/src/components/StreakStrip";
+import { OtterMascot } from "@/src/components/OtterMascot";
 import { api, type StreakStats, type AccessSnapshot } from "@/src/lib/api";
 import { useTheme } from "@/src/theme/ThemeProvider";
 import { fonts, radii, spacing } from "@/src/theme/tokens";
@@ -64,6 +65,8 @@ export default function YouScreen() {
         <ScreenHeader eyebrow="you" title="Your Progress Profile." />
 
         <View style={[styles.streakWrap, { backgroundColor: colors.background }]} testID="streak-strip">
+          <OtterMascot size={110} variant={days >= 5 ? "celebrate" : days >= 1 ? "float" : "sleep"} />
+          <View style={{ height: spacing.lg }} />
           <StreakStrip daysActive={days} size={44} />
           <Text style={[styles.streakLine, { color: colors.text, fontFamily: fonts.display }]}>
             {streakLine}
