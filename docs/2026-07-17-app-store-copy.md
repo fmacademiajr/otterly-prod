@@ -163,20 +163,57 @@ Do NOT show the paywall in a screenshot. Apple's screenshot guidelines allow it,
 ```
 Sign in with Apple is the primary auth on this build. Google sign-in is available via Emergent's managed OAuth as an alternative.
 
-Test account (works without Apple sign-in):
-  Email: apple-review@getotterly.com
-  Password: <fill in before submission — mint on our end, unique to review>
+HOW TO TEST PREMIUM FEATURES WITHOUT A REAL PURCHASE
+The app supports voucher codes for exactly this case. Please redeem this code
+in the app to unlock all premium features (Deep Shrink, unlimited task
+shrinks, unlimited braindumps, unlimited Room messages):
 
-Content moderation: the Room uses Anthropic Claude with a system prompt that appends crisis-line numbers on any self-harm disclosure. This is a client-visible backstop, not a routing mechanism — users still get their reply. Backend test coverage in tests/test_safety_referral.py.
+  Voucher code: [PASTE A FRESH UNREDEEMED CODE HERE — SEE PIPELINE BELOW]
 
-In-app purchases: two products only.
+  How to redeem:
+    1. Open the app and skip onboarding (or sign in with Apple).
+    2. Go to the "You" tab (bottom right).
+    3. Tap "Have a voucher?"
+    4. Enter the code above, tap Redeem.
+    5. Premium features unlock immediately — Deep Shrink appears in the
+       shrinker, and daily caps are removed.
+
+The code is single-use, so please use only the one code we minted for App
+Review. If it does not work, contact support@getotterly.com and we will
+mint a fresh one within an hour.
+
+Voucher pipeline (for our own reference — do not include in the actual
+Review Notes field): before submission, mint at least 3 codes in the
+production database via `backend/scripts/mint_vouchers.py --count 3 --batch
+apple-review --expires 2027-12-31`, redeem one on a real device to confirm
+the whole pipeline works end-to-end, then paste a DIFFERENT unredeemed code
+into the notes above.
+
+CONTENT MODERATION
+The Room uses Anthropic Claude with a system prompt that appends crisis-line
+numbers on any self-harm disclosure. This is a client-visible backstop, not
+a routing mechanism — users still get their reply. Backend test coverage in
+tests/test_safety_referral.py.
+
+IN-APP PURCHASES
+Two products only.
   - otter_lifetime  (non-consumable, $29)
-  - otter_monthly   (auto-renew, $4.99)
-The paywall lists only what the server actually gates (Deep Shrink). Prices are pulled from RevenueCat at runtime and shown in the local currency.
+  - otter_monthly   (auto-renewable, $4.99)
+The paywall lists only what the server actually gates (Deep Shrink). Prices
+are pulled from RevenueCat at runtime and shown in the local currency.
 
-Account deletion: Settings → Delete account. Removes all user-written data (tasks, steps, braindumps, Room transcripts, sessions) within minutes. See DELETE /api/account.
+ACCOUNT DELETION
+Settings > Delete account. Removes all user-written data (tasks, steps,
+braindumps, Room transcripts, sessions) within minutes. See DELETE
+/api/account. Complies with Apple 5.1.1(v).
 
-Support contact for reviewer questions: support@getotterly.com (monitored during review).
+AI DISCLOSURE
+Task Shrinker and the Room use Anthropic Claude via Emergent's API.
+Voice-to-text uses OpenAI Whisper. Neither Anthropic nor OpenAI trains on
+data sent through Emergent's API (confirmed in writing).
+
+SUPPORT
+support@getotterly.com is a live inbox and is monitored during review.
 ```
 
 ---
@@ -210,11 +247,12 @@ Every line was chosen against `DESIGNER_BRIEF.md` §1–4 (anti-overwhelm), §7 
 
 Blocker checklist (mirrors HANDOFF §5, with the copy-side items done here):
 
-- [ ] `support@getotterly.com` inbox exists and is monitored
-- [ ] `getotterly.com/privacy` deploys with `docs/privacy-policy.md`
-- [ ] `getotterly.com/support` resolves (even a stub)
+- [ ] `support@getotterly.com` inbox exists and is monitored ✅ (live per EMERGENT-DEPLOY-CHECKLIST §4)
+- [ ] `getotterly.com/privacy` deploys with `docs/privacy-policy.md` ✅ (live per EMERGENT-DEPLOY-CHECKLIST §4)
+- [ ] `getotterly.com/support` resolves (even a stub) ✅ (live per EMERGENT-DEPLOY-CHECKLIST §4)
 - [ ] `getotterly.com` marketing homepage is live
 - [ ] Screenshots captured on a real device from an EAS build
 - [ ] Two IAP products created in App Store Connect + RevenueCat
-- [ ] Reviewer test account minted and password pasted into §9
+- [ ] **Mint 3 vouchers in the PRODUCTION database** (not local); redeem one on TestFlight to confirm the pipeline; paste a DIFFERENT fresh code into §9. See `docs/EMERGENT-DEPLOY-CHECKLIST.md` §3.
 - [ ] `expo.ios.buildNumber` bumped on the build being submitted
+- [ ] Real `EXPO_PUBLIC_REVENUECAT_IOS_KEY` (starts with `appl_`, NOT `test_`) and `REVENUECAT_WEBHOOK_SECRET` set on Emergent's production environment before the first TestFlight sandbox purchase — otherwise premium won't grant. See `docs/EMERGENT-DEPLOY-CHECKLIST.md` §1–2.
