@@ -49,14 +49,21 @@ import server  # noqa: E402  (import proves the module loads; no mongod is conta
 
 class _RaisingColl:
     """First create_index call raises. Every call after it (on this or any
-    other collection) must still be attempted — that's the whole point."""
+    other collection) must still be attempted — that's the whole point.
+    index_information() reports an OLD-style plain email_1 (no
+    partialFilterExpression) so _startup_indexes' migration guard decides to
+    call drop_index — which then also raises, to prove that failure is
+    isolated too."""
 
     def __init__(self, calls, fail_once):
         self._calls = calls
         self._fail_once = fail_once
 
+    async def index_information(self, *a, **k):
+        return {"email_1": {"v": 2, "key": [("email", 1)], "unique": True}}
+
     async def drop_index(self, *a, **k):
-        raise Exception("no such index")  # simulates the absent-on-second-boot case
+        raise Exception("simulated drop failure")
 
     async def create_index(self, keys, **opts):
         self._calls.append(keys)
@@ -93,8 +100,8 @@ async def check_all_specs_attempted_despite_first_failure() -> list:
 
 
 async def check_drop_index_failure_does_not_block_creates() -> list:
-    """drop_index("email_1") always raises here (simulating the absent-index
-    case on every boot after the first). That must not prevent a single
+    """The migration guard sees an old-style email_1 (no partialFilterExpression)
+    and calls drop_index, which raises here. That must not prevent a single
     create_index call from running."""
     out = []
     calls = []

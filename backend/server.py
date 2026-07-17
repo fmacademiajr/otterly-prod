@@ -1186,12 +1186,21 @@ INDEX_SPECS = [
 
 @app.on_event("startup")
 async def _startup_indexes():
-    # One-time migration off the plain-unique email index. ISOLATED try/except by
-    # necessity: on the second boot email_1 is already gone and drop_index raises
-    # OperationFailure. Inside the loop below, that raise would abort every index
-    # after it, silently, which is exactly the bomb this task fixes.
+    # One-time migration off the plain-unique email index. Mongo names an index
+    # from its key shape by default, so the OLD plain-unique index and the NEW
+    # partial one are both "email_1" — create_index alone can't replace one with
+    # the other (IndexKeySpecsConflict), it has to be dropped first. Gated on the
+    # existing index actually lacking the partial filter so this only fires once:
+    # an unconditional drop would tear down and rebuild the live unique index on
+    # EVERY boot, which is its own version of the bomb this task fixes (a brief
+    # window with no uniqueness guarantee, and a failed rebuild silently swallowed
+    # like every other index below). ISOLATED try/except regardless: drop_index
+    # still raises OperationFailure on a fresh db with no email_1 at all, and that
+    # must never cascade into the loop below.
     try:
-        await db.users.drop_index("email_1")
+        existing = (await db.users.index_information()).get("email_1")
+        if existing and "partialFilterExpression" not in existing:
+            await db.users.drop_index("email_1")
     except Exception:
         pass
 

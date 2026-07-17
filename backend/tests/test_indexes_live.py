@@ -19,6 +19,7 @@ import sys
 import types
 import uuid
 from pathlib import Path
+from unittest.mock import patch
 
 BACKEND = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BACKEND))
@@ -78,19 +79,50 @@ async def _seed_old_email_index() -> None:
     await server.db.users.create_index("email", unique=True)
 
 
+class _DropSpy:
+    """Wraps the real users collection. Counts drop_index calls so the test
+    can assert the migration guard actually skipped the drop on the second
+    boot — not just infer it from the end state, which would look identical
+    whether the guard worked or the drop merely no-op'd."""
+
+    def __init__(self, real_coll):
+        self._real = real_coll
+        self.drop_calls = 0
+
+    async def drop_index(self, *a, **k):
+        self.drop_calls += 1
+        return await self._real.drop_index(*a, **k)
+
+    def __getattr__(self, name):
+        return getattr(self._real, name)
+
+
 async def run_checks() -> list:
     out = []
     await _seed_old_email_index()
     before = await server.db.users.index_information()
     out.append(("seed: old plain-unique email_1 present", "email_1" in before, repr(sorted(before))))
 
-    # First boot: drop_index("email_1") succeeds (it exists), then the new
-    # partial index is created in its place.
-    await server._startup_indexes()
-    # Second boot: email_1 is already gone, so drop_index raises
-    # OperationFailure. That raise must be isolated — it must not cascade
-    # and take out everything created after it in the function.
-    await server._startup_indexes()
+    # First boot: the seeded email_1 lacks partialFilterExpression, so the
+    # migration guard drops it, then the new partial index is created in its
+    # place (also named email_1 — Mongo names indexes from key shape, so the
+    # drop-then-create is required, create_index alone can't replace one
+    # index option set with another under the same name).
+    spy = _DropSpy(server.db.users)
+    with patch.object(server.db, "users", spy):
+        await server._startup_indexes()
+    out.append(("first boot: migration guard actually dropped the old index",
+                spy.drop_calls == 1, f"drop_index called {spy.drop_calls} times"))
+
+    # Second boot: email_1 now HAS partialFilterExpression, so the guard must
+    # NOT drop it again — this proves the migration is genuinely one-time,
+    # not a drop/rebuild on every boot (which would itself be a version of
+    # the bomb: a window with no unique constraint on email, every boot).
+    spy2 = _DropSpy(server.db.users)
+    with patch.object(server.db, "users", spy2):
+        await server._startup_indexes()
+    out.append(("second boot: migration guard did NOT re-drop the already-migrated index",
+                spy2.drop_calls == 0, f"drop_index called {spy2.drop_calls} times"))
 
     users_idx = await server.db.users.index_information()
     sessions_idx = await server.db.user_sessions.index_information()
