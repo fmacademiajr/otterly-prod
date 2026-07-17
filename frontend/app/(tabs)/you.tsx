@@ -65,7 +65,12 @@ export default function YouScreen() {
         <ScreenHeader eyebrow="you" title="Your Progress Profile." />
 
         <View style={[styles.streakWrap, { backgroundColor: colors.background }]} testID="streak-strip">
-          <OtterMascot size={110} variant={days >= 5 ? "celebrate" : days >= 1 ? "float" : "sleep"} />
+          {/* The otter's expression may reflect the present session. It may never
+              reflect the user's record. This mapped mood to streak count, so a week
+              away put a sleeping otter on a screen titled "Your Progress Profile".
+              That is guilt contingency, the Finch mechanic this app exists against.
+              At rest, present, always. */}
+          <OtterMascot size={110} variant="float" />
           <View style={{ height: spacing.lg }} />
           <StreakStrip daysActive={days} size={44} />
           <Text style={[styles.streakLine, { color: colors.text, fontFamily: fonts.display }]}>
