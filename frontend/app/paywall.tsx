@@ -90,7 +90,7 @@ export default function PaywallScreen() {
   const onBuy = async () => {
     setMessage("");
     if (status !== "authed") {
-      setMessage("Sign in first — we need to link your purchase to your account.");
+      setMessage("Sign in first. We need to link your purchase to your account.");
       return;
     }
     const plan = PLAN[selected];

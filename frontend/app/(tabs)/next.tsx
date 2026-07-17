@@ -233,9 +233,28 @@ export default function NextScreen() {
           style={styles.softExit}
         >
           <Text style={{ color: colors.primary, fontFamily: fonts.body, fontSize: 15 }}>
-            Not this — pick another
+            Not this one. Pick another
           </Text>
         </TouchableOpacity>
+
+        {/* The brief specifies this escape and it was never built. The two exits that
+            shipped both fail the moment it matters: "Not this one" re-rolls at the SAME
+            energy, so the next pick is no smaller, and "Skip for now" drops you into a
+            7-item inbox. Someone frozen on a step they cannot start was offered a
+            re-roll at the same difficulty. NEXT_SYSTEM already instructs the model to
+            pick the shortest step at low energy, so this is real, not theatre.
+            Hidden at low, because the label would be a lie. */}
+        {energy !== "low" ? (
+          <TouchableOpacity
+            testID="next-too-tired"
+            onPress={() => onEnergy("low")}
+            style={styles.softExit}
+          >
+            <Text style={{ color: colors.textMuted, fontFamily: fonts.body, fontSize: 15 }}>
+              I&apos;m too tired for this
+            </Text>
+          </TouchableOpacity>
+        ) : null}
 
         <TouchableOpacity
           testID="next-skip-for-now"
