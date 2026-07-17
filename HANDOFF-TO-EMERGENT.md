@@ -30,24 +30,32 @@ Also in `ios`: `"config": { "usesNonExemptEncryption": false }`. Without it ever
 
 ## 1. Ship state
 
-### Blockers cleared
+All code blockers are cleared on branch `account-and-apple-auth`. What remains is
+console work and art, listed in §5 and §6. Both need a human, not a code change.
+
+### Blockers cleared in code
 
 | ID | What it was | Commit |
 |---|---|---|
 | B1 | Scaffold bundle id, permanent once built | `310803f` |
 | B2 | **No purchase ever granted premium** | `310803f` |
-| B3 | No account deletion (Apple 5.1.1(v)) | `ec5ea83` |
+| B3 | No account deletion (Apple 5.1.1(v)) | `ec5ea83` + `62fa0bd` + `75d83fa` |
+| B4 | Privacy policy written, hosted plan, linked in-app | `fc8e35f` + `82bf06e` |
+| B5 | **Sign in with Apple** (Guideline 4.8) | `ac7be83` (backend) + `3b19cfb` (UI) |
 | B6 | Paywall sold three features that do not exist | `ec8a1ae` |
 | N1 | Webhook **revoked** premium from paying customers | `a50ad2e` |
 | N2 | A dropped EXPIRATION meant premium forever | `a50ad2e` |
+| — | Vouchers: free access for press/beta/supporters | `61e5a31` |
+| — | Index bomb: every create_index now isolated | `18024ed` + `dc1a4ca` |
+| — | Design review fixes, UK crisis number | `cfb0367` + `b81c6f1` |
 
-### Still open — these block submission
+### Still open — none are code, all need a human
 
 | ID | What | Owner |
 |---|---|---|
-| B4 | Privacy policy is written (`docs/privacy-policy.md`) but **not hosted**, and not linked in-app | Fernando + this repo |
-| B5 | **Sign in with Apple** — Guideline 4.8. Google-only login is a deterministic rejection | in progress |
+| B5-verify | The Apple **UI** is unverified until a TestFlight build. `isAvailableAsync()` is false on web, so the native flow was confirmed by code inspection only, never run. | Fernando, on first build |
 | B7 | Four broken art assets, incl. an **Apple logo** in `otter-focus.png` | Fernando / designer |
+| — | Everything in §5 (console) and the web deploy in §5.6 | Fernando |
 
 ---
 
@@ -87,6 +95,10 @@ Also: if `REVENUECAT_WEBHOOK_SECRET` is unset in prod, `_verify_rc_signature` fa
 
 **The yearly tier is deleted.** At $29.99/year against a $29 lifetime it was strictly dominated — nobody should ever have bought it — and a third option that is never the right answer is the exact choice overload this app exists to reduce. **Two IAP products, not three:** `otter_lifetime` ($29 non-consumable), `otter_monthly` ($4.99 auto-renew).
 
+**Vouchers do NOT touch `db.entitlements`.** They live in their own `db.vouchers` collection, and `get_entitlement` resolves entitlements OR vouchers. This is deliberate: `db.entitlements` is one doc per user that the RevenueCat webhook upserts, so a voucher written into it could be stomped by a later RevenueCat event. They have different lifecycles and must not share a row. Resolution order is entitlements-first, so a real payer is never downgraded by a lapsed voucher. Custom vouchers, not Apple Offer Codes, because offer codes are subscription-only and cannot cover the `otter_lifetime` non-consumable. Minting is a CLI (`backend/scripts/mint_vouchers.py`), deliberately not an HTTP endpoint — this backend's only auth is an Emergent passthrough and a privileged route is attack surface. Granting free access outside IAP is allowed by Apple; only selling outside it is not.
+
+**Sign in with Apple does NOT store Apple tokens.** It verifies the `identityToken` and mints its own session. Apple's TN3194 requires programmatic token revocation only if you HOLD the tokens; without them, the documented path is delete-the-data-and-tell-the-user-to-revoke, which the deletion UI copy already does. This keeps the `.p8` Sign-in-with-Apple key off the launch critical path entirely. The account is keyed on Apple's `sub`, never email — Apple returns email only on the first authorization, so an email-keyed path 400s on every re-auth. Email is stored only when present AND verified: an unverified email that matched an existing user would be an account-squatting vector.
+
 **Shrink quality is enforced in code, not in the prompt.** `SHRINK_SYSTEM` said 'Never generic ("plan it out")' and `shrink_task` only checked `if step.text:`, so `{"text": "Plan it out"}` persisted and rendered. `_validate_steps` now sits between the LLM and the database. The denylist is a **denylist of abstract verbs on purpose**: a physical-verb allowlist scored 20/20 on fixtures and then false-rejected 18/18 real chore steps ("Mail the check", "Water the plants"). Physical verbs are an open class; planning verbs are closed.
 **Known ceiling, documented, do not "fix" it:** this enforces grammar, shape and honest labels. It does **not** enforce scope. "Write the report" at 25 minutes passes every rule and always will.
 
@@ -111,7 +123,7 @@ Being fixed by giving every index its own try/except. **Never add an index to th
 
 **`buildHeaders()` is Bearer XOR X-Device-Id, never both.** Any call needing both must pass the header explicitly in `opts.headers`; `req()` merges them over the built ones.
 
-**Using the wrong collection key silently no-ops.** `owner`-keyed: tasks, steps, activity, room_messages, rate_counters. `user_id`-keyed: users, entitlements, user_sessions. A wrong key matches nothing and reports success. `backend/tests/test_account_delete.py` derives the collection set from `server.py` source, so a tenth collection mapped nowhere fails the test.
+**Using the wrong collection key silently no-ops.** `owner`-keyed: tasks, steps, activity, room_messages, rate_counters. `user_id`-keyed: users, entitlements, user_sessions. `vouchers` keys on `redeemed_by` (a third key). A wrong key matches nothing and reports success. `backend/tests/test_account_delete.py` derives the collection set from `server.py` source, so an eleventh collection mapped nowhere fails the test.
 
 **`Alert.alert` is a no-op on React Native Web.** Any confirm must branch on `Platform.OS === "web"`.
 
@@ -124,10 +136,12 @@ Being fixed by giving every index its own try/except. **Never add an index to th
 3. **RevenueCat**: create the App Store app bound to `com.getotterly.app`. Use the **`appl_`** key, not a `test_` one — `test_` is the sandbox Test Store and will not resolve real purchases.
 4. **Env**: `EXPO_PUBLIC_REVENUECAT_IOS_KEY` (frontend), `REVENUECAT_WEBHOOK_SECRET` (backend — unset means entitlement is dead).
 5. **Spend cap on `EMERGENT_LLM_KEY`.** Five minutes and it bounds every abuse finding absolutely. No app code substitutes for it.
-6. **Host the privacy policy**, then link it in-app. Two open questions inside `docs/privacy-policy.md`:
-   - `support@getotterly.com` is a placeholder. The policy promises deletion-by-email as the fallback for anyone who cannot open the app, so a dead address makes that a false statement.
-   - **The training claim.** A line saying Anthropic and OpenAI do not train on this data was removed because it could not be verified. Their public API terms say so, but **Otterly never calls them directly** — every call goes through Emergent's proxy on Emergent's key, so **Emergent's agreement governs**. Confirm what that contract actually says, then state it plainly. Do not restore the stronger claim on assumption.
-7. **Regenerate four art assets** (see §6).
+6. **The privacy policy** is written (`docs/privacy-policy.md`) and converted to `privacy.html` on the web repo. The in-app link (Settings → Privacy policy) points at `getotterly.com/privacy`. Two things before it goes public:
+   - **Deploy the three web pages.** The homepage was repositioned to lead with task-shrinking, body-doubling moved to its own page, and `privacy.html` is new. Deploy: `cd ~/code/otterly && npx wrangler@3 pages deploy apps/web --project-name otterly-waitlist`. The OAuth token goes stale after weeks, so you may need `npx wrangler@3 login` first. Do NOT test the live waitlist form — every submit writes a real row to the production Resend audience.
+   - `support@getotterly.com` must exist and be monitored. The policy publishes it as a deletion-by-email fallback for anyone who cannot open the app. A dead address makes that a false statement.
+   - (The training claim is RESOLVED — you confirmed with Emergent that OpenAI and Anthropic do not train on this data, and the policy states it plainly. Keep their confirmation in writing; if that contract changes, this is the first line that becomes false.)
+7. **Vouchers**: to hand someone free access, run `cd backend && ./.venv/bin/python scripts/mint_vouchers.py --count 20 --batch press-2026-07 --expires 2027-01-31`. It prints codes. People redeem them in the app under Settings. This needs the backend deployed and its `.env` present.
+8. **Regenerate four art assets** (see §6).
 8. Support URL, screenshots (6.7" + 5.5"), description, age rating (flag AI-generated + mental-health honestly), Sentry DSNs.
 
 ---
@@ -148,23 +162,31 @@ Regenerate to match `otter-default.png` / `otter-float.png`: closed-mouth calm, 
 
 ## 7. Verification — what is proven and what is not
 
-**Proven.** Backend suite is green and each test was checked for teeth by reintroducing the bug it guards:
+**Proven.** 10 backend test files, 133 checks, all green. Each was checked for teeth by reintroducing the bug it guards — a passing test here means something failed when the bug came back. The venv ones need `backend/.venv`.
 ```
 cd backend
-python3 tests/test_shrink_guardrail.py       # 20 fixtures + invariants
-python3 tests/test_safety_referral.py        # 17 cases + 2 invariants
-python3 tests/test_entitlement_events.py     # 15 event types + regression guard
-./.venv/bin/python tests/test_referral_wiring.py   # 6 wiring checks
-./.venv/bin/python tests/test_reshrink_guard.py    # 9 checks
-./.venv/bin/python tests/test_account_delete.py    # 11 checks
+python3 tests/test_shrink_guardrail.py             # 20  shrink quality guardrails
+python3 tests/test_safety_referral.py              # 19  self-harm referral logic
+python3 tests/test_entitlement_events.py           # 15  webhook classifier + expiry
+./.venv/bin/python tests/test_referral_wiring.py   # 6   referral wired into endpoints
+./.venv/bin/python tests/test_reshrink_guard.py    # 9   re-shrink 409 guard
+./.venv/bin/python tests/test_account_delete.py    # 12  deletion key map + wiring
+./.venv/bin/python tests/test_vouchers.py          # 20  redeem, race, resolution order
+./.venv/bin/python tests/test_indexes.py           # 2   one bad index can't cascade
+./.venv/bin/python tests/test_indexes_live.py      # 13  the bomb, against a real mongod
+./.venv/bin/python tests/test_apple_auth.py        # 19  Apple token verification
 ```
-Account deletion was additionally verified against a **real mongod**: all 8 person-keyed collections → 0 rows on unfiltered counts, `dev:` orphans purged, `webhook_events` untouched.
+Three things were additionally verified against a **real mongod**, not just a fake db:
+- **Account deletion:** all 8 person-keyed collections → 0 rows on unfiltered counts, `dev:` orphans purged, `webhook_events` untouched.
+- **The index bomb:** the naive email-index change destroyed 5 of 5 critical indexes; the shipped per-index-isolated version keeps all of them. `test_indexes_live` proves it.
+- **The money path (`get_entitlement` with three inputs):** paid beats voucher; an expired subscription falls through to an active voucher; both-expired returns inactive. All four combinations correct.
+- **Apple token verification mutation-tested:** neutering the audience and issuer checks makes exactly the aud/iss test cases fail, so the security tests genuinely test that verification happens.
 
 **Not proven, and do not let a green suite imply otherwise:**
 - **No device build has ever existed.** No `eas.json` until `c4021fa`.
 - **No real payment has ever completed.** B2 is the highest-risk unverified thing in the repo.
 - `backend/tests/test_otterly_api.py` is integration-style against a live `BASE_URL` and **has never run** in any environment we control.
-- Sign in with Apple's UI cannot be exercised on web by design (`isAvailableAsync()` is false there).
+- **Sign in with Apple's UI is built but never run.** `isAvailableAsync()` is false on web, so the button never renders in the only harness that exists. The native flow, the button layout, and whether RevenueCat's `logIn` fires on Apple sign-in are confirmed by code inspection, not by execution. The BACKEND (`/api/auth/apple`) is fully tested and mutation-verified; it is the UI wiring that a TestFlight build must confirm. First-build check: sign in with Apple, then sign out and sign in again (Apple sends no email the second time) — same account, name intact.
 - The Emergent auth handshake was never exercised. `demobackend.emergentagent.com` returns 404 for a bogus session id, which proves the host is live and nothing else. Whether session ids are scoped per app is **open, and only Emergent can answer it**.
 - `EMERGENT_LLM_KEY` spend caps are unknown. That single unknown decides whether the abuse findings are launch-week or a footnote.
 
@@ -179,6 +201,8 @@ Account deletion was additionally verified against a **real mongod**: all 8 pers
 | `docs/2026-07-17-shrink-guardrails-spec.md` | Why shrink enforcement is a harness, not a prompt |
 | `docs/2026-07-17-design-review.md` | 16 findings against the brief, the tokens, and the research |
 | `docs/2026-07-17-account-apple-tasks.md` | Task plan for deletion + Apple, with every trap named |
-| `docs/privacy-policy.md` | Ready to host, two open questions inside |
+| `docs/privacy-policy.md` | Ready to host. `privacy.html` (on the web repo) is the deployable version. One open item: `support@getotterly.com` must exist |
+| `docs/2026-07-17-design-review.md` | 16 confirmed design findings; the top ones are fixed, the type-scale one is deferred with reason |
+| `HANDOFF-TO-EMERGENT.md` + `EMERGENT-PROMPT.md` | This file, and the prompt to paste into Emergent as the first message |
 | `frontend/EAS-SETUP.md` | Build and submit steps |
 | `DESIGNER_BRIEF.md` | Authoritative design intent. **Stale on the otter and the yearly tier** — see §3 |
