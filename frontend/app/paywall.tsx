@@ -18,40 +18,40 @@ import { useAuth } from "@/src/auth/AuthProvider";
 import { revenuecat } from "@/src/lib/revenuecat";
 import { api, type AccessSnapshot } from "@/src/lib/api";
 
-type PlanKey = "monthly" | "founding" | "yearly";
+// ponytail: the yearly tier is gone. It was $29.99/year against a $29 lifetime,
+// so buying it was never rational, and a dominated third option is exactly the
+// choice overload this app exists to reduce.
+type PlanKey = "monthly" | "founding";
 
-const PLAN_ORDER: PlanKey[] = ["monthly", "founding", "yearly"];
-const PLAN: Record<PlanKey, { title: string; price: string; unit: string; sub: string; packageIdentifier: string; best?: boolean }> = {
+const PLAN_ORDER: PlanKey[] = ["monthly", "founding"];
+const PLAN: Record<PlanKey, { title: string; unit: string; sub: string; packageIdentifier: string; fallbackPrice: string; best?: boolean }> = {
   monthly: {
     title: "Monthly",
-    price: "$4.99",
     unit: "/month",
     sub: "Billed monthly.\nCancel anytime.",
     packageIdentifier: "$rc_monthly",
+    fallbackPrice: "$4.99",
   },
   founding: {
     title: "Founding Otter",
-    price: "$29",
     unit: "once",
     sub: "Forever access +\nspecial thanks.",
     packageIdentifier: "$rc_lifetime",
+    fallbackPrice: "$29",
     best: true,
-  },
-  yearly: {
-    title: "Yearly",
-    price: "$29.99",
-    unit: "/year",
-    sub: "Save 50%\nBilled annually.",
-    packageIdentifier: "$rc_annual",
   },
 };
 
+// Every bullet below maps to a real entitlement check in backend/server.py.
+// The previous list sold three features that exist nowhere in the codebase
+// (templates/workflows, mood tracking and insights, ambient sounds) and omitted
+// Deep Shrink, the only thing actually gated at 402. Anything added here needs a
+// server-side gate first, or it is a false claim on a store listing.
 const FEATURES = [
-  "Unlimited focus companions to sit with you",
-  "Customizable micro-step workflows & templates",
-  "Detailed progress insights & mood tracking",
-  "Exclusive gentle sounds and ambient backgrounds",
-  "Ad-free, calming experience forever",
+  "Deep Shrink, our most careful breakdown",  // server.py:641, the only hard 402 gate
+  "Unlimited shrinks",                        // 3/day free
+  "Unlimited time in the Room",               // 20 messages/day free
+  "Unlimited braindumps and voice notes",     // 5/day free each
 ];
 
 export default function PaywallScreen() {
@@ -79,6 +79,13 @@ export default function PaywallScreen() {
 
   const findPackage = (identifier: string) =>
     packages.find((p) => p.identifier === identifier || p.packageType?.toLowerCase().includes(identifier.replace("$rc_", "")));
+
+  // The store's own localized string, never a hardcoded one. The old code
+  // displayed "$29.99" from a constant while App Store Connect could have been
+  // charging anything, and showed USD to everyone regardless of their region.
+  // Falls back only when packages have not loaded (Expo Go, web, no IOS_KEY).
+  const priceFor = (k: PlanKey) =>
+    findPackage(PLAN[k].packageIdentifier)?.product?.priceString ?? PLAN[k].fallbackPrice;
 
   const onBuy = async () => {
     setMessage("");
@@ -176,7 +183,7 @@ export default function PaywallScreen() {
                   </Text>
                   <View style={styles.priceRow}>
                     <Text style={[styles.priceMain, { color: colors.text, fontFamily: fonts.displayBold }]}>
-                      {p.price}
+                      {priceFor(k)}
                     </Text>
                     <Text style={[styles.priceUnit, { color: colors.textMuted, fontFamily: fonts.body }]}>
                       {p.unit}

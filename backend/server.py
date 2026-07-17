@@ -168,7 +168,7 @@ class UserProfile(BaseModel):
 
 class AccessResponse(BaseModel):
     premium: bool
-    plan: str  # "free" | "otter_monthly" | "otter_yearly" | "otter_lifetime"
+    plan: str  # "free" | "otter_monthly" | "otter_lifetime" (yearly dropped pre-launch)
     limits: dict  # {"shrinks_today": int, "shrinks_cap": int, ...}
 
 
