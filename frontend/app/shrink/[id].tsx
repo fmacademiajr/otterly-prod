@@ -277,6 +277,20 @@ export default function ShrinkScreen() {
           {task?.title || "…"}
         </Text>
 
+        {/* Tier-1 regulation, offered and never imposed. The research says structure
+            lands badly on a disconnected prefrontal cortex, but nothing here can read
+            arousal, so this appends an option instead of gating on a guess. Same
+            append-never-subtract shape as ensure_referral. */}
+        <TouchableOpacity
+          testID="room-offer"
+          onPress={() => router.push("/(tabs)/room")}
+          style={[styles.roomOffer, { backgroundColor: colors.warmSurface, borderColor: colors.warmBorder }]}
+        >
+          <Text style={{ color: colors.textMuted, fontFamily: fonts.body, fontSize: 13 }}>
+            Too wired to start? Sit with me first
+          </Text>
+        </TouchableOpacity>
+
         {/* ponytail: the easy/medium/hard pills lived here. They asked a frozen person to
             size a task they had not decomposed yet, and load() auto-shrank on "medium"
             before anyone could tap. That is a decision spent for nothing. */}
@@ -478,6 +492,14 @@ const styles = StyleSheet.create({
   eyebrow: { fontSize: 12, letterSpacing: 4, textTransform: "uppercase" },
   scroll: { paddingHorizontal: spacing.lg, paddingBottom: spacing.xxl },
   taskTitle: { fontSize: 44, lineHeight: 50, marginBottom: spacing.lg, marginTop: spacing.md },
+  roomOffer: {
+    alignSelf: "flex-start",
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 6,
+    marginBottom: spacing.lg,
+  },
   revealBtn: {
     alignItems: "center",
     paddingVertical: spacing.md,
