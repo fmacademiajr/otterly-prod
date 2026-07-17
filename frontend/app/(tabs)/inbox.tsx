@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import {
   FlatList,
   KeyboardAvoidingView,
@@ -11,7 +11,8 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter } from "expo-router";
-import { Plus, Trash2, Sparkles } from "lucide-react-native";
+import { Plus, Trash2, Sparkles, Mic, MicOff } from "lucide-react-native";
+import { AudioModule, RecordingPresets, useAudioRecorder } from "expo-audio";
 
 import { api, ApiError, type Task } from "@/src/lib/api";
 import { useTheme } from "@/src/theme/ThemeProvider";
@@ -25,6 +26,9 @@ export default function InboxScreen() {
   const [dumping, setDumping] = useState(false);
   const [mode, setMode] = useState<"quick" | "dump">("quick");
   const [error, setError] = useState("");
+  const [recording, setRecording] = useState(false);
+  const [transcribing, setTranscribing] = useState(false);
+  const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
 
   const load = useCallback(async () => {
     try {
@@ -72,6 +76,39 @@ export default function InboxScreen() {
   const del = async (id: string) => {
     await api.deleteTask(id);
     load();
+  };
+
+  const toggleRecord = async () => {
+    setError("");
+    if (recording) {
+      try {
+        await recorder.stop();
+        const uri = recorder.uri;
+        setRecording(false);
+        if (!uri) return;
+        setTranscribing(true);
+        const res = await api.transcribe(uri);
+        setText((prev) => (prev ? `${prev.trim()} ${res.text}` : res.text));
+      } catch (e: any) {
+        setError(e instanceof ApiError && e.status === 429 ? e.detail : "Couldn't transcribe.");
+      } finally {
+        setTranscribing(false);
+      }
+      return;
+    }
+    // Start
+    try {
+      const perm = await AudioModule.requestRecordingPermissionsAsync();
+      if (!perm.granted) {
+        setError("Microphone permission is needed for voice notes.");
+        return;
+      }
+      await recorder.prepareToRecordAsync();
+      await recorder.record();
+      setRecording(true);
+    } catch {
+      setError("Couldn't start the recorder.");
+    }
   };
 
   const open = (task: Task) => {
@@ -156,28 +193,44 @@ export default function InboxScreen() {
               testID="braindump-input"
               value={text}
               onChangeText={setText}
-              placeholder="Just let it all out…"
+              placeholder={transcribing ? "Transcribing…" : "Just let it all out…"}
               placeholderTextColor={colors.textSubtle}
               multiline
+              editable={!recording && !transcribing}
               style={[styles.dumpInput, { color: colors.text, backgroundColor: colors.background, borderColor: colors.warmBorder, fontFamily: fonts.body }]}
             />
-            <TouchableOpacity
-              testID="braindump-btn"
-              onPress={braindump}
-              disabled={!text.trim() || dumping}
-              style={[
-                styles.sortBtn,
-                { backgroundColor: text.trim() ? colors.primary : colors.warmBorder },
-              ]}
-            >
-              <Text style={{
-                color: text.trim() ? colors.onPrimary : colors.textSubtle,
-                fontFamily: fonts.bodySemibold,
-                fontSize: 16,
-              }}>
-                {dumping ? "sorting…" : "Sort it out"}
-              </Text>
-            </TouchableOpacity>
+            <View style={{ flexDirection: "row", gap: spacing.sm, marginBottom: spacing.base }}>
+              <TouchableOpacity
+                testID="voice-record"
+                onPress={toggleRecord}
+                disabled={transcribing}
+                style={[
+                  styles.micBtn,
+                  { backgroundColor: recording ? colors.danger : colors.warmSurface, borderColor: colors.warmBorder },
+                ]}
+              >
+                {recording
+                  ? <MicOff color={colors.onPrimary} size={20} strokeWidth={1.8} />
+                  : <Mic color={colors.textMuted} size={20} strokeWidth={1.8} />}
+              </TouchableOpacity>
+              <TouchableOpacity
+                testID="braindump-btn"
+                onPress={braindump}
+                disabled={!text.trim() || dumping}
+                style={[
+                  styles.sortBtn,
+                  { flex: 1, backgroundColor: text.trim() ? colors.primary : colors.warmBorder },
+                ]}
+              >
+                <Text style={{
+                  color: text.trim() ? colors.onPrimary : colors.textSubtle,
+                  fontFamily: fonts.bodySemibold,
+                  fontSize: 16,
+                }}>
+                  {dumping ? "sorting…" : "Sort it out"}
+                </Text>
+              </TouchableOpacity>
+            </View>
           </View>
         )}
 
@@ -297,6 +350,14 @@ const styles = StyleSheet.create({
   sortBtn: {
     height: 56,
     borderRadius: radii.pill,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  micBtn: {
+    width: 56,
+    height: 56,
+    borderRadius: radii.pill,
+    borderWidth: 1,
     alignItems: "center",
     justifyContent: "center",
   },

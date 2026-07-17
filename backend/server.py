@@ -17,7 +17,7 @@ Endpoints all under /api. Auth endpoints:
   GET    /api/me/access          entitlement snapshot { premium: bool, plan: str, limits }
   POST   /api/webhooks/revenuecat  RevenueCat webhook (HMAC-signed)
 """
-from fastapi import FastAPI, APIRouter, HTTPException, Request, Header, Depends
+from fastapi import FastAPI, APIRouter, HTTPException, Request, Header, Depends, UploadFile, File
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -690,6 +690,51 @@ async def braindump(payload: BraindumpRequest, who=Depends(resolve_owner)):
         await bump_rate(owner_id, "braindump")
 
     return BraindumpResponse(tasks=tasks[:12])
+
+
+# ---------- Voice transcribe ----------
+
+class TranscribeResponse(BaseModel):
+    text: str
+
+
+@api.post("/transcribe", response_model=TranscribeResponse)
+async def transcribe(audio: UploadFile = File(...), who=Depends(resolve_owner)):
+    """Whisper-1 STT via Emergent Universal Key. Free tier gets 5/day."""
+    owner_id, user_id = who
+    ent = await get_entitlement(owner_id, user_id)
+    if not ent["active"]:
+        allowed, _ = await check_rate(owner_id, "transcribe", 5)
+        if not allowed:
+            raise HTTPException(429, "free tier: 5 voice notes/day. upgrade for unlimited.")
+
+    audio_bytes = await audio.read()
+    if not audio_bytes:
+        raise HTTPException(400, "empty audio")
+
+    # OpenAI whisper-1 via the standard SDK; the Emergent key is compatible.
+    import openai
+    client = openai.OpenAI(
+        api_key=EMERGENT_LLM_KEY,
+        base_url="https://integrations.emergentagent.com/llm",
+    )
+    import io
+    buf = io.BytesIO(audio_bytes)
+    buf.name = audio.filename or "audio.m4a"
+    try:
+        result = client.audio.transcriptions.create(
+            model="whisper-1",
+            file=buf,
+        )
+        text = (result.text or "").strip()
+    except Exception as e:
+        logger.warning("whisper failed: %s", e)
+        raise HTTPException(502, "transcription failed")
+
+    if not ent["active"]:
+        await bump_rate(owner_id, "transcribe")
+
+    return TranscribeResponse(text=text)
 
 
 # ---------- Room (Sit-With-Me) ----------

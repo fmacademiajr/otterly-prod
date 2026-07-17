@@ -125,6 +125,29 @@ export const api = {
     req<NextResponse>("/api/next", { method: "POST", body: JSON.stringify({ energy, minutes }) }),
   braindump: (text: string) =>
     req<{ tasks: string[] }>("/api/braindump", { method: "POST", body: JSON.stringify({ text }) }),
+
+  transcribe: async (uri: string): Promise<{ text: string }> => {
+    const form = new FormData();
+    // On native, we pass an object with uri/name/type; on web we blob.
+    // Using `any` avoids strict FormData typing issues in RN.
+    // @ts-ignore RN FormData accepts { uri, name, type }
+    form.append("audio", { uri, name: "audio.m4a", type: "audio/m4a" });
+    const headers = await (async () => {
+      const h: Record<string, string> = {};
+      const { identity } = await import("./identity");
+      const token = await identity.getToken();
+      if (token) h["Authorization"] = `Bearer ${token}`;
+      else h["X-Device-Id"] = await identity.getDeviceId();
+      return h;
+    })();
+    const res = await fetch(`${BASE}/api/transcribe`, {
+      method: "POST",
+      headers,
+      body: form as any,
+    });
+    if (!res.ok) throw new ApiError(res.status, await res.text());
+    return await res.json();
+  },
   roomSend: (session_id: string, text: string, goal?: string) =>
     req<{ reply: string }>("/api/room/message", {
       method: "POST",
