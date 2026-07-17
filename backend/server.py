@@ -233,7 +233,19 @@ async def get_entitlement(owner_id: str, user_id: Optional[str]) -> dict:
     if not doc:
         return {"active": False, "plan": "free"}
     prem = doc.get("premium") or {}
-    return {"active": bool(prem.get("active")), "plan": prem.get("product_id") or "free"}
+    active = bool(prem.get("active"))
+
+    # ponytail: the webhook writes expires_at_ms and nothing ever read it, so one
+    # dropped EXPIRATION meant premium forever. Belt and braces on top of the
+    # webhook, not instead of it.
+    # The lifetime tier has NO expires_at_ms — absent must mean "never expires",
+    # never "expired at epoch 0".
+    expires_ms = prem.get("expires_at_ms")
+    if active and expires_ms:
+        if float(expires_ms) < datetime.now(timezone.utc).timestamp() * 1000:
+            active = False
+
+    return {"active": active, "plan": prem.get("product_id") or "free"}
 
 
 async def check_rate(owner_id: str, kind: str, cap: int) -> Tuple[bool, int]:
@@ -442,6 +454,43 @@ def _verify_rc_signature(raw_body: bytes, header: Optional[str]) -> bool:
     return hmac.compare_digest(digest, v1)
 
 
+# ponytail: pure and separately tested. Returns True (grant), False (revoke), or
+# None (this event says nothing about entitlement, leave the stored value alone).
+#
+# The old classifier ended in `else: is_active = event_type in active_types` and
+# then ran the upsert unconditionally, so BILLING_ISSUE, TRANSFER,
+# SUBSCRIPTION_PAUSED and every event RevenueCat ships in future all resolved to
+# False and switched premium OFF for people who had paid. Unknown must mean
+# "don't touch", never "revoke".
+GRANT_EVENTS = {
+    "INITIAL_PURCHASE",
+    "RENEWAL",
+    "UNCANCELLATION",
+    "PRODUCT_CHANGE",
+    "NON_RENEWING_PURCHASE",  # the lifetime tier
+    "CANCELLATION",  # cancelled, but paid through the current period
+}
+REVOKE_EVENTS = {"EXPIRATION"}  # the only event that legitimately ends access
+
+
+def classify_event(event_type: str) -> Optional[bool]:
+    """True = grant, False = revoke, None = leave `active` untouched.
+
+    BILLING_ISSUE and SUBSCRIPTION_PAUSED deliberately return None: RevenueCat's
+    grace period is authoritative and a card hiccup is not an expiry. TRANSFER
+    returns None because there is no correct automatic behaviour without a second
+    identity, and revoking is strictly worse than doing nothing.
+    """
+    if event_type in REVOKE_EVENTS:
+        return False
+    if event_type in GRANT_EVENTS:
+        return True
+    return None
+
+
+# ---------- RevenueCat webhook END ----------
+
+
 @api.post("/webhooks/revenuecat")
 async def revenuecat_webhook(request: Request):
     raw = await request.body()
@@ -471,28 +520,30 @@ async def revenuecat_webhook(request: Request):
     if not user_id:
         return {"ok": True, "no_user": True}
     event_type = event.get("type", "")
+    is_active = classify_event(event_type)
 
-    active_types = {"INITIAL_PURCHASE", "RENEWAL", "UNCANCELLATION", "PRODUCT_CHANGE", "NON_RENEWING_PURCHASE"}
-    if event_type == "EXPIRATION":
-        is_active = False
-    elif event_type == "CANCELLATION":
-        is_active = True  # still active until expiration
+    # Metadata is always worth recording. `active` is only touched when the event
+    # actually says something about it, so an unknown type can never revoke.
+    fields = {
+        "premium.last_event_id": event_id,
+        "premium.updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    for key, value in (
+        ("premium.product_id", event.get("product_id")),
+        ("premium.expires_at_ms", event.get("expiration_at_ms")),
+        ("premium.entitlements", event.get("entitlement_ids")),
+    ):
+        # Never blank a known value because an unrelated event omitted it.
+        if value is not None:
+            fields[key] = value
+
+    if is_active is None:
+        logger.info("rc webhook: %s leaves entitlement untouched for %s", event_type or "<empty>", user_id)
     else:
-        is_active = event_type in active_types
+        fields["premium.active"] = is_active
 
-    await db.entitlements.update_one(
-        {"user_id": user_id},
-        {"$set": {
-            "premium.active": is_active,
-            "premium.product_id": event.get("product_id"),
-            "premium.expires_at_ms": event.get("expiration_at_ms"),
-            "premium.last_event_id": event_id,
-            "premium.entitlements": event.get("entitlement_ids") or [],
-            "premium.updated_at": datetime.now(timezone.utc).isoformat(),
-        }},
-        upsert=True,
-    )
-    return {"ok": True}
+    await db.entitlements.update_one({"user_id": user_id}, {"$set": fields}, upsert=True)
+    return {"ok": True, "active_changed": is_active is not None}
 
 
 # ---------- Task endpoints ----------
