@@ -31,6 +31,8 @@ import hashlib
 import time
 import logging
 import httpx
+import secrets
+import jwt
 from pathlib import Path
 from pydantic import BaseModel, Field
 from typing import List, Optional, Literal, Tuple
@@ -63,6 +65,11 @@ if SENTRY_DSN and SENTRY_DSN != "placeholder":
         pass  # never let observability break the app
 
 EMERGENT_SESSION_DATA_URL = "https://demobackend.emergentagent.com/auth/v1/env/oauth/session-data"
+
+# Apple Sign In: we verify the identity_token only, never store Apple tokens (see task-4-brief).
+APPLE_BUNDLE_ID = os.environ.get("APPLE_BUNDLE_ID", "com.getotterly.app")
+APPLE_ISSUER = "https://appleid.apple.com"
+_apple_jwks = jwt.PyJWKClient(f"{APPLE_ISSUER}/auth/keys")  # PyJWKClient caches keys internally
 
 client = AsyncIOMotorClient(MONGO_URL)
 db = client[DB_NAME]
@@ -159,6 +166,12 @@ class StreakStats(BaseModel):
 class SessionExchangeRequest(BaseModel):
     session_token: str
     device_id: Optional[str] = None
+
+
+class AppleAuthRequest(BaseModel):
+    identity_token: str
+    device_id: Optional[str] = None
+    full_name: Optional[str] = Field(default=None, max_length=100)  # first authorization only
 
 
 class UserProfile(BaseModel):
@@ -361,6 +374,17 @@ async def root():
 
 # ---------- Auth endpoints ----------
 
+async def migrate_device_data(device_id: Optional[str], user_id: str):
+    """Reassign anonymous device-owned rows to the signed-in user. Shared by both
+    auth paths — two inline copies would drift. rate_counters is deliberately NOT
+    migrated: caps are per-day per-owner, and resetting on sign-in hands out a free day."""
+    if not device_id:
+        return
+    old = f"dev:{device_id}"
+    for coll in (db.tasks, db.steps, db.activity, db.room_messages):
+        await coll.update_many({"owner": old}, {"$set": {"owner": user_id}})
+
+
 @api.post("/auth/session")
 async def auth_session(payload: SessionExchangeRequest):
     """Client hands us the emergent session_token from redirect, we verify and store a server session."""
@@ -408,18 +432,97 @@ async def auth_session(payload: SessionExchangeRequest):
     )
 
     # Migrate device data → user_id
-    if payload.device_id:
-        old = f"dev:{payload.device_id}"
-        await db.tasks.update_many({"owner": old}, {"$set": {"owner": user_id}})
-        await db.steps.update_many({"owner": old}, {"$set": {"owner": user_id}})
-        await db.activity.update_many({"owner": old}, {"$set": {"owner": user_id}})
-        await db.room_messages.update_many({"owner": old}, {"$set": {"owner": user_id}})
+    await migrate_device_data(payload.device_id, user_id)
 
     return {
         "user_id": user_id,
         "email": email,
         "name": name,
         "picture": picture,
+        "session_token": server_token,
+        "expires_at": expires_at.isoformat(),
+    }
+
+
+@api.post("/auth/apple")
+async def auth_apple(payload: AppleAuthRequest):
+    """Sign in with Apple. We verify Apple's identity_token signature/claims and mint
+    our OWN session (Apple tokens are never stored — see task-4-brief). Keys on Apple's
+    `sub`, never email: Apple returns email only on the first authorization."""
+    try:
+        signing_key = _apple_jwks.get_signing_key_from_jwt(payload.identity_token)
+        claims = jwt.decode(
+            payload.identity_token,
+            signing_key.key,
+            algorithms=["RS256"],
+            audience=APPLE_BUNDLE_ID,
+            issuer=APPLE_ISSUER,
+        )  # exp/iat verified by default
+    except jwt.PyJWTError:
+        # NEVER a bare Exception here — that is how a skipped signature check hides.
+        raise HTTPException(401, "invalid Apple identity token")
+
+    sub = claims.get("sub")
+    if not sub:
+        raise HTTPException(401, "invalid Apple identity token")
+
+    email = claims.get("email")  # first authorization only
+    ev = claims.get("email_verified")
+    email_verified = ev is True or ev == "true"  # Apple sends bool true OR string "true"
+
+    existing = await db.users.find_one({"apple_sub": sub}, {"_id": 0})
+    if existing:
+        user_id = existing["user_id"]
+        # full_name arrives on first auth only; never overwrite an existing name with None.
+        if payload.full_name:
+            await db.users.update_one({"user_id": user_id}, {"$set": {"name": payload.full_name}})
+    else:
+        # Merge onto an existing user ONLY when the email is present AND verified —
+        # entitlements key on user_id, so forking strands a paid subscription; and an
+        # unverified email must never merge (account-linking takeover).
+        merged = await db.users.find_one({"email": email}, {"_id": 0}) if (email and email_verified) else None
+        if merged:
+            user_id = merged["user_id"]
+            updates = {"apple_sub": sub}
+            if payload.full_name and not merged.get("name"):
+                updates["name"] = payload.full_name
+            await db.users.update_one({"user_id": user_id}, {"$set": updates})
+        else:
+            user_id = f"user_{uuid.uuid4().hex[:12]}"
+            doc = {
+                "user_id": user_id,
+                "apple_sub": sub,
+                "name": payload.full_name or (email.split("@")[0] if (email and email_verified) else "there"),
+                "picture": None,
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            }
+            # Store email ONLY when present AND verified. OMIT the key otherwise —
+            # never email: None. An unverified email is untrusted: keying or storing
+            # it lets an attacker's Apple account squat a stranger's real address, and
+            # an unverified address matching an existing user would collide on the
+            # partial-unique email index (that user already owns it).
+            if email and email_verified:
+                doc["email"] = email
+            await db.users.insert_one(doc)
+
+    # Mint our own session — the Emergent path reuses Emergent's token, this path can't.
+    server_token = secrets.token_urlsafe(32)
+    expires_at = datetime.now(timezone.utc) + timedelta(days=7)
+    await db.user_sessions.insert_one({
+        "session_token": server_token,
+        "user_id": user_id,
+        "expires_at": expires_at,  # native datetime — the TTL index depends on it
+        "created_at": datetime.now(timezone.utc),
+    })
+
+    await migrate_device_data(payload.device_id, user_id)
+
+    user = await db.users.find_one({"user_id": user_id}, {"_id": 0})
+    return {
+        "user_id": user_id,
+        "email": user.get("email", ""),
+        "name": user.get("name", ""),
+        "picture": user.get("picture"),
         "session_token": server_token,
         "expires_at": expires_at.isoformat(),
     }
