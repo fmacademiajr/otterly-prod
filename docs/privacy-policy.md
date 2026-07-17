@@ -38,7 +38,7 @@ Otterly is built by one person. Some of it runs on other companies' systems.
 | **Apple** | Your payment details. Your name and email if you use Sign in with Apple. | They process payment and sign-in. Otterly never sees your card. |
 | **Sentry** | Crash reports with your user id. | So crashes get fixed. |
 
-Anthropic and OpenAI process this text to answer the request. Their handling of it is governed by their own terms and by the agreement Emergent holds with them.
+Anthropic and OpenAI process this text to answer the request. They do not use it to train their models.
 
 Nobody else gets your data. It is not sold, rented, or shared for advertising.
 
@@ -93,13 +93,12 @@ FERNANDO — TWO THINGS BEFORE THIS GOES LIVE:
    promises deletion-by-email as the fallback when someone cannot open the app.
    A dead address turns that promise into a false statement.
 
-2. The "training" line. I removed a claim that Anthropic and OpenAI do not train
-   on your data, because I could not verify it. Their public API terms say they
-   do not train on API inputs, but Otterly does NOT call them directly — every
-   call goes through Emergent's proxy on Emergent's key, so Emergent's agreement
-   governs, not yours. Confirm with Emergent what their contract says, then state
-   it plainly. Do not restore the stronger claim on assumption. This is a legal
-   document and an unverifiable claim in it is a liability.
+2. The "training" line — RESOLVED 2026-07-17. Fernando confirmed with Emergent
+   that OpenAI and Anthropic do not train on this data, so the claim is stated
+   plainly in the policy above. Provenance matters here because every LLM call
+   goes through Emergent's proxy on Emergent's key, so their agreement governs,
+   not the public API terms. If that contract ever changes, this line is the
+   first thing that becomes false. Keep a written copy of their confirmation.
 
 Also confirm before publishing:
 - Sentry's retention period, if you want to name it.
