@@ -14,6 +14,7 @@ Endpoints all under /api. Auth endpoints:
   POST   /api/auth/session       exchange Emergent session_token → app session
   GET    /api/auth/me            current user profile
   POST   /api/auth/logout        drop server session
+  DELETE /api/account            delete account and all owned data
   GET    /api/me/access          entitlement snapshot { premium: bool, plan: str, limits }
   POST   /api/webhooks/revenuecat  RevenueCat webhook (HMAC-signed)
 """
@@ -414,6 +415,42 @@ async def auth_logout(authorization: Optional[str] = Header(default=None)):
         token = authorization.split(" ", 1)[1].strip()
         await db.user_sessions.delete_one({"session_token": token})
     return {"ok": True}
+
+
+OWNER_COLLECTIONS = ("tasks", "steps", "activity", "room_messages", "rate_counters")
+USER_ID_COLLECTIONS = ("entitlements", "user_sessions")   # `users` deleted last, separately
+# webhook_events: keyed on event_id only. No person key, unreachable per-user.
+#   Holds event_id + a timestamp (:465-468) — the RC payload is never stored.
+#   No PII, nothing to delete. Deliberate, not an oversight.
+
+
+@api.delete("/account")
+async def delete_account(
+    user: UserProfile = Depends(require_user),
+    x_device_id: Optional[str] = Header(default=None),
+):
+    """Apple 5.1.1(v): accounts must be deletable. require_user, not
+    resolve_owner — deletion must never be reachable by device id alone.
+
+    Accepted risk: an unproven device_id claim lets a caller delete another
+    device's anonymous rows. Same trust level as the migration at :377,
+    already logged as post-launch. Refusing the header would leave real PII
+    (tasks, braindumps, Room transcripts) behind under dev:<id>, which is worse.
+    """
+    uid = user.user_id
+    owners = [uid] + ([f"dev:{x_device_id}"] if x_device_id else [])
+    deleted = {}
+    try:
+        for name in OWNER_COLLECTIONS:
+            deleted[name] = (await db[name].delete_many({"owner": {"$in": owners}})).deleted_count
+        for name in USER_ID_COLLECTIONS:
+            deleted[name] = (await db[name].delete_many({"user_id": uid})).deleted_count
+        deleted["users"] = (await db.users.delete_many({"user_id": uid})).deleted_count
+    except Exception:
+        logger.exception("account delete partial user_id=%s deleted=%s", uid, deleted)
+        raise HTTPException(500, "delete didn't finish. please try again.")
+    logger.info("account deleted user_id=%s deleted=%s", uid, deleted)
+    return {"ok": True, "deleted": deleted}
 
 
 # ---------- Entitlement ----------
