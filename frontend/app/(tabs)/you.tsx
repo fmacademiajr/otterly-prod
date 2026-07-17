@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Alert,
   Platform,
@@ -36,6 +36,7 @@ export default function YouScreen() {
   const [voucherCode, setVoucherCode] = useState("");
   const [voucherBusy, setVoucherBusy] = useState(false);
   const [voucherMessage, setVoucherMessage] = useState<{ text: string; ok: boolean } | null>(null);
+  const deletingRef = useRef(false);
 
   const load = useCallback(async () => {
     try {
@@ -66,12 +67,17 @@ export default function YouScreen() {
       "Signed in with Apple? Revoke access in Settings, your name, Sign in with Apple, Otterly.";
 
     const run = async () => {
+      if (deletingRef.current) return;
+      deletingRef.current = true;
       try {
         await deleteAccount();
+        setName("");
       } catch {
         const failMsg = "Delete didn't finish. Try again.";
         if (Platform.OS === "web") window.alert(failMsg);
         else Alert.alert("Delete didn't finish", "Try again.");
+      } finally {
+        deletingRef.current = false;
       }
     };
 
@@ -201,7 +207,7 @@ export default function YouScreen() {
             <Sparkles size={18} color={access?.premium ? colors.primary : colors.primary} strokeWidth={1.6} />
             <View style={{ flex: 1, marginLeft: spacing.md }}>
               <Text style={{ color: colors.text, fontFamily: fonts.bodySemibold, fontSize: 16 }}>
-                {access?.premium ? "Otter Premium — active" : "Otter Premium"}
+                {access?.premium ? "Otter Premium: active" : "Otter Premium"}
               </Text>
               <Text style={{ color: colors.textMuted, fontFamily: fonts.body, fontSize: 13, marginTop: 2 }}>
                 {access?.premium

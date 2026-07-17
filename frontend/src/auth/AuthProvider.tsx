@@ -141,9 +141,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const deleteAccount = useCallback(async () => {
     await api.deleteAccount(); // throws → caller shows error, token kept for retry
-    await identity.reset();
-    await storage.removeItem("otterly.userName");
-    await storage.removeItem("otterly.reminderTime");
+    try {
+      await identity.reset();
+      await storage.removeItem("otterly.userName");
+      await storage.removeItem("otterly.reminderTime");
+    } catch {
+      // ponytail: server delete already succeeded here. A local cleanup failure
+      // (e.g. SecureStore throwing) must not read back to the caller as a
+      // delete failure. Fall through to the anonymous state either way.
+    }
     setUser(null);
     setStatus("anonymous");
   }, []);
