@@ -47,17 +47,21 @@ credential exists only on the Google path (`server.py:343`). Shipping Apple-only
 idles that path, so launch ships the strong-token flow and never the weak one.
 Apple-only is more secure here, not a shortcut.
 
-## The premise tension, resolved honestly
+## The premise tension, resolved
 
 The review's sharpest catch: "no credits means no backend" collides with "export
 the Mongo data from Emergent." If the backend is already dead you cannot dump the
-data. If you can dump it, the backend is not fully dead.
+data. If you can dump it, the backend is not fully dead. And there is a deeper
+ownership problem underneath it: the Mongo was provisioned by Emergent, its
+connection string lives only in Emergent's environment, and it sits inside
+Emergent's infrastructure. It was never ours.
 
-Resolution: extract the data FIRST, before anything else. A one-time minimal
-top-up purely to run a `mongodump` is acceptable and is not the same as staying
-on the meter. You pay once to get your data out, then you are gone. If there is
-no production data worth keeping (few or no real users yet), skip the export and
-start Atlas clean. Confirm which before you spend a cent.
+Resolution (confirmed 2026-07-18): there is no data to migrate. No real users,
+no Google-auth users. So the export question is moot and the ownership problem
+dissolves. We do NOT rescue the Emergent Mongo. We stand up our own Atlas cluster
+from scratch, point the backend at it, and abandon the Emergent database. The
+startup index migration rebuilds the entire schema on first boot, so there is
+nothing to port. See Tier 1 step 6 for the exact setup.
 
 ## Cost
 
@@ -80,10 +84,12 @@ and model choice are the cost controls, not an afterthought.
 
 ## TIER 1 — the minimum to launch (do now, in this order)
 
-### 0. Get the data out first
-Confirm the Emergent Mongo is reachable. If it holds real users, run `mongodump`
-now (top up minimally if that is the only way to reach it). If it holds nothing
-worth keeping, note that and start Atlas empty. Do this before any other step.
+### 0. No data to migrate — abandon the Emergent Mongo
+Confirmed 2026-07-18: no real users, no Google-auth users. There is nothing worth
+rescuing, so we do not `mongodump` and do not top up to reach the old database. We
+create our own Atlas cluster from scratch (step 6) and leave the Emergent Mongo
+behind. One sanity check before you walk away: open the Emergent Mongo once and
+confirm those collections hold only disposable test rows. Then never touch it again.
 
 ### 1. Own keys, with alerts not just caps
 Anthropic key at console.anthropic.com, OpenAI key at platform.openai.com. Set a
@@ -97,16 +103,16 @@ lean on.
 `server.py:1150`. Real OpenAI key, delete the `base_url` line. The SDK call shape
 does not change.
 
-### 3. Swap Claude, and cut the dependency (one function + requirements)
-`server.py:315`. Replace `LlmChat` with a direct `anthropic` SDK call (cleaner and
-smaller than litellm). Remove the `server.py:42` import. In `requirements.txt`,
-drop `emergentintegrations` and the Emergent-hosted `litellm` wheel, add
-`anthropic` from PyPI. This is not purely mechanical: `emergentintegrations` pins
-a specific Anthropic model version and has its own message and system-prompt
-handling, and Otterly's retrained persona (charge dial, emotion-first intro) is
-sensitive to exactly that. Pin the model id explicitly and confirm the message
-and system-prompt shape against the live Anthropic API reference at
-implementation time.
+### 3. Swap Claude, and cut the dependency — DONE on branch `decouple-emergent-llm`
+Implemented 2026-07-18. `LlmChat` replaced with `AsyncAnthropic`; the top-level
+`emergentintegrations` import removed; `emergentintegrations` and the
+Emergent-hosted `litellm` wheel dropped from `requirements.txt`, `anthropic`
+added. Model tiers kept exactly as the retrained persona was tuned on
+(`claude-sonnet-4-6` normal, `claude-opus-4-8` Deep Shrink). The Room now rebuilds
+its conversation from `db.room_messages` instead of relying on Emergent's
+session-id memory — without this the body-double would silently forget every prior
+turn. Not yet verified on a running backend: shrink output quality/tone, Room
+memory across turns. That is the branch's exit-test before merge.
 
 ### 4. Ship Apple-only auth, and hide the Google button
 Server side is done (see above). The client must remove or hide the Google
@@ -121,19 +127,73 @@ whether any exist before deciding.
 After you build and submit, you cannot change it without a new build and another
 App Store review. So the backend URL must be final before the build.
 
-Use Railway or Fly, not the VPS. The 4GB VPS already runs Hermes, content-engine,
-and the dashboard under a shared-session board, and it gets stopped and
-experimented on. Co-hosting a consumer app's production uptime there invites
-outages unrelated to Otterly. Keep it off that box.
+Host on a managed PaaS, not the VPS. The 4GB VPS already runs Hermes,
+content-engine, and the dashboard under a shared-session board, and it gets
+stopped and experimented on. Co-hosting a consumer app's production uptime there
+invites outages unrelated to Otterly. Keep it off that box.
+
+For a Philippines-first app, lead with Fly.io over Railway: Fly runs in Singapore
+(`sin`, ~40ms from Manila vs ~180ms from US-West), and scale-to-zero keeps the
+idle cost near nothing pre-launch. Railway is the simpler git-push deploy and is a
+fine fallback if you would rather not touch a `fly.toml`, but confirm its region
+proximity to Southeast Asia first. Either host runs the same Dockerfile with no
+lock-in — the choice is latency and cost curve, not a scalability ceiling. The
+scale levers that actually bite are the Atlas tier and the LLM spend cap, not the
+container host.
 
 Point the build at a stable domain you control, `api.getotterly.com`, via a CNAME
 to the host or a Cloudflare Tunnel. Never bake a `*.up.railway.app` or
 `*.fly.dev` host URL into the build, that welds you to one host forever.
 
-### 6. MongoDB to Atlas
-Create a free M0 cluster. Import the dump from step 0 (or start clean). Point
-`MONGO_URL` at it. The startup index migration runs itself on first boot, verify
-the full index catalogue survives (the cascade bug there is fixed on main).
+### 6. Stand up our own MongoDB Atlas (start clean, no data to migrate)
+
+Own the database this time. Create it under your own MongoDB account, not through
+Emergent. Free M0 tier to start.
+
+1. Sign up / sign in at `https://cloud.mongodb.com` with your own email
+   (fmacademia@gmail.com), NOT via any Emergent link. This is the ownership fix:
+   the cluster, credentials, region, and billing are all yours.
+2. Create a cluster: choose **M0 (Free)**, provider **AWS**, region
+   **Singapore (ap-southeast-1)** for PH latency. Name it e.g. `otterly-prod`.
+3. Database Access → Add New Database User. Username `otterly`, and use
+   "Autogenerate Secure Password" — copy it now, it is shown once. Role:
+   `readWriteAnyDatabase` (or scope to the one db). This password is the real
+   gate, so make it strong.
+4. Network Access → Add IP Address. Managed hosts (Fly/Railway) use dynamic
+   egress IPs, so add `0.0.0.0/0` (allow from anywhere). The database user
+   password is what actually protects the data; tighten to a static egress IP
+   later if the host offers one. Do NOT skip auth to compensate.
+5. Connect → Drivers → Python / Motor. Copy the SRV connection string. It looks
+   like:
+   `mongodb+srv://otterly:<password>@otterly-prod.xxxxx.mongodb.net/?retryWrites=true&w=majority`
+   Replace `<password>` with the real password from step 3 (URL-encode it if it
+   contains `@ : / ?` — Atlas passwords usually avoid these).
+
+**Wire it into the backend host env** (Fly secrets / Railway variables — NOT
+committed to git):
+
+```
+MONGO_URL = mongodb+srv://otterly:<password>@otterly-prod.xxxxx.mongodb.net/?retryWrites=true&w=majority
+DB_NAME   = otterly
+```
+
+`server.py:47-48` reads both as hard requirements (`os.environ["MONGO_URL"]`,
+`os.environ["DB_NAME"]`). The SRV string carries no database name — `DB_NAME`
+selects it, and Mongo creates the db and collections on first write, so any name
+works; use `otterly`. `motor` resolves `mongodb+srv://` via `dnspython`, already
+in `requirements.txt`.
+
+**First boot is the migration.** On startup, `_startup_indexes` runs its
+one-time `drop_index("email_1")` (harmless on a fresh db — the index does not
+exist, the drop raises, the isolated try/except swallows it) then builds the full
+`INDEX_SPECS` catalogue. Nothing to import. Verify the catalogue landed:
+partial-unique `email`, sparse-unique `apple_sub`, `user_sessions.session_token`
+unique, the `expires_at` TTL, and `rate_counters` unique. `test_indexes_live.py`
+covers this when a mongod is reachable.
+
+Exit check: hit `/api/me/access` (or any authed route) against the new backend and
+confirm it reads/writes the Atlas cluster (watch the Atlas "Metrics" tab for
+connections and ops).
 
 ### 7. Repoint RevenueCat, set secrets, then build
 - In the RevenueCat dashboard, repoint the webhook URL to
