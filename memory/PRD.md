@@ -50,12 +50,21 @@ Emergent Universal Key. Model: `anthropic/claude-sonnet-4-6`. Non-streaming (sma
 ## Deferred vs. upstream
 
 - Real-time video/audio body-double rooms (LiveKit) — deferred; Room is text-only.
-- Voice-input STT — deferred.
-- Auth (Supabase) — deferred; v1 is device-local.
+- Voice-input STT — DONE (Whisper-1 in the Inbox braindump).
+- Auth (Supabase) — replaced by Emergent Google Auth + Sign in with Apple.
 - Push notifications + lifecycle messages — deferred.
-- RevenueCat paywall — deferred.
-- Crisis flow full-screen route with legal-reviewed content — deferred (safe copy in Room system prompt only).
+- RevenueCat paywall — implemented (two products: `otter_lifetime`, `otter_monthly`), keys pending.
+- Crisis flow full-screen route with legal-reviewed content — deferred (safe copy in Room system prompt + `ensure_referral` backstop in room_message/braindump).
 - Fontshare General Sans — DM Sans substituted for body font pending bundled asset.
+
+## Sync status (2026-07-17)
+
+The `/app` workspace is in sync with `github.com/fmacademiajr/otterly-prod`
+`main` @ `74d7ba3`. All 10 backend test files pass (133 checks). Bundle id
+`com.getotterly.app` verified. Four broken mascots (§6 in HANDOFF) regenerated
+and flood-filled to real transparency. App Store submission copy drafted at
+`docs/2026-07-17-app-store-copy.md`. Remaining open items (§1 in HANDOFF): all
+human/console tasks — no code blockers remain.
 
 ## Success metric
 
