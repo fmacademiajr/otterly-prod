@@ -39,14 +39,15 @@ from typing import List, Optional, Literal, Tuple
 import uuid
 from datetime import datetime, timezone, timedelta
 
-from emergentintegrations.llm.chat import LlmChat, UserMessage
+from anthropic import AsyncAnthropic
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
 
 MONGO_URL = os.environ["MONGO_URL"]
 DB_NAME = os.environ["DB_NAME"]
-EMERGENT_LLM_KEY = os.environ["EMERGENT_LLM_KEY"]
+ANTHROPIC_API_KEY = os.environ["ANTHROPIC_API_KEY"]
+OPENAI_API_KEY = os.environ["OPENAI_API_KEY"]  # Whisper transcription only
 REVENUECAT_WEBHOOK_SECRET = os.environ.get("REVENUECAT_WEBHOOK_SECRET", "")
 SENTRY_DSN = os.environ.get("SENTRY_DSN", "")
 
@@ -309,18 +310,23 @@ async def counts_today(owner_id: str) -> dict:
 
 # ---------- LLM helpers ----------
 
-def _llm_chat(session_id: str, system: str, deep: bool = False) -> LlmChat:
+_anthropic = AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
+
+
+async def _llm_text(system: str, messages: list, deep: bool = False) -> str:
+    """One Anthropic call. `messages` is the anthropic messages array (roles + content).
+    Same model tiers the retrained persona was tuned on: opus for Deep Shrink, sonnet otherwise."""
     model = "claude-opus-4-8" if deep else "claude-sonnet-4-6"
-    return LlmChat(
-        api_key=EMERGENT_LLM_KEY,
-        session_id=session_id,
-        system_message=system,
-    ).with_model("anthropic", model)
+    resp = await _anthropic.messages.create(
+        model=model, max_tokens=4096, system=system, messages=messages,
+    )
+    return "".join(b.text for b in resp.content if b.type == "text")
 
 
+# ponytail: session_id kept for call-site compatibility; unused now that memory is
+# reconstructed explicitly (the Room) rather than delegated to a provider session.
 async def _llm_json(session_id: str, system: str, user_text: str, deep: bool = False) -> dict:
-    chat = _llm_chat(session_id, system, deep=deep)
-    raw = await chat.send_message(UserMessage(text=user_text))
+    raw = await _llm_text(system, [{"role": "user", "content": user_text}], deep=deep)
     text = (raw or "").strip()
     if text.startswith("```"):
         text = text.strip("`")
@@ -1144,12 +1150,9 @@ async def transcribe(audio: UploadFile = File(...), who=Depends(resolve_owner)):
     if not audio_bytes:
         raise HTTPException(400, "empty audio")
 
-    # OpenAI whisper-1 via the standard SDK; the Emergent key is compatible.
+    # OpenAI whisper-1 via the standard SDK, direct to OpenAI.
     import openai
-    client = openai.OpenAI(
-        api_key=EMERGENT_LLM_KEY,
-        base_url="https://integrations.emergentagent.com/llm",
-    )
+    client = openai.OpenAI(api_key=OPENAI_API_KEY)
     import io
     buf = io.BytesIO(audio_bytes)
     buf.name = audio.filename or "audio.m4a"
@@ -1197,14 +1200,19 @@ async def room_message(payload: RoomMessage, who=Depends(resolve_owner)):
     user_doc = RoomMessageDoc(session_id=payload.session_id, role="user", text=payload.text)
     await db.room_messages.insert_one({**user_doc.dict(), "owner": owner_id})
 
-    chat = _llm_chat(payload.session_id, ROOM_SYSTEM)
+    # Rebuild the conversation from stored messages (includes the just-inserted user
+    # turn as the last entry). Emergent's LlmChat carried this memory by session_id;
+    # the direct API is stateless, so we pass history explicitly.
     history = await db.room_messages.find(
         {"session_id": payload.session_id, "owner": owner_id}, {"_id": 0}
     ).sort("created_at", 1).to_list(20)
-    prompt = payload.text
-    if payload.goal and len(history) <= 2:
-        prompt = f"(User goal for this session: {payload.goal})\n\n{payload.text}"
-    reply = await chat.send_message(UserMessage(text=prompt))
+    messages = [
+        {"role": "assistant" if m["role"] == "assistant" else "user", "content": m["text"]}
+        for m in history
+    ]
+    if payload.goal and len(history) <= 2 and messages and messages[-1]["role"] == "user":
+        messages[-1]["content"] = f"(User goal for this session: {payload.goal})\n\n{payload.text}"
+    reply = await _llm_text(ROOM_SYSTEM, messages)
     reply_text = ensure_referral((reply or "").strip(), payload.text)
 
     otter_doc = RoomMessageDoc(session_id=payload.session_id, role="otter", text=reply_text)

@@ -63,7 +63,8 @@ def check_maps() -> list:
 # ---- Part 2: boot the real module against a fake db, prove the wiring ----
 os.environ.setdefault("MONGO_URL", "mongodb://localhost:27017")
 os.environ.setdefault("DB_NAME", "test")
-os.environ.setdefault("EMERGENT_LLM_KEY", "x")
+os.environ.setdefault("ANTHROPIC_API_KEY", "x")
+os.environ.setdefault("OPENAI_API_KEY", "x")
 os.environ.setdefault("CORS_ORIGINS", "*")
 
 # Stub emergentintegrations, Emergent's private package. Not under test here.
