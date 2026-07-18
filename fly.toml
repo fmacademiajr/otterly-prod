@@ -1,0 +1,27 @@
+# Fly.io config for the Otterly backend.
+# `app` must be globally unique on Fly — `flyctl launch` will offer to set/rename it.
+# Region `sin` (Singapore) is ~40ms from Manila; keep the Atlas cluster in Singapore too.
+app = "otterly-api"
+primary_region = "sin"
+
+[build]
+  dockerfile = "backend/Dockerfile"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  # Scale to zero when idle so pre-launch cost stays near nothing; wake on request.
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [[http_service.checks]]
+    method = "GET"
+    path = "/api/"          # returns {"ok": true, "app": "otterly"}, no auth
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "10s"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"          # FastAPI + motor is light; the DB is on Atlas, not here
