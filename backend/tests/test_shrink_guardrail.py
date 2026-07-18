@@ -13,7 +13,7 @@ from pathlib import Path
 BACKEND = Path(__file__).resolve().parent.parent
 
 # Extract the guardrail block from server.py without booting the app
-# (server.py reads MONGO_URL / EMERGENT_LLM_KEY at import time).
+# (server.py reads MONGO_URL / ANTHROPIC_API_KEY at import time).
 src = (BACKEND / "server.py").read_text()
 block = src[src.index("ABSTRACT_VERBS = {"):src.index("SHRINK_SYSTEM = ")]
 ns = {"re": re, "Tuple": tuple, "List": list}
