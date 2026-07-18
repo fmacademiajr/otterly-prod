@@ -34,6 +34,11 @@ dist
 .env
 .env.*
 !.env.example
+# Allow the two app env files so Emergent's deploy pipeline can pick them up.
+# These contain non-secret keys (EMERGENT_LLM_KEY is scoped, RC keys are public).
+# Real production secrets are still set via Emergent's dashboard env override.
+!/backend/.env
+!/frontend/.env
 *token.json*
 *credentials.json*
 
@@ -82,7 +87,8 @@ memory/test_credentials.md
 
 # Mobile development
 android-sdk/
-*.env
+!/backend/.env
+!/frontend/.env
 credentials.json
 *.key
 .credentials
