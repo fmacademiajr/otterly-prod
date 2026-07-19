@@ -15,6 +15,8 @@ import Svg, { Path } from "react-native-svg";
 import { EnergyPill } from "@/src/components/EnergyPill";
 import { OtterMascot } from "@/src/components/OtterMascot";
 import { OtterButton } from "@/src/components/OtterButton";
+import { IdleBreath } from "@/src/components/IdleBreath";
+import { Atmosphere, useAtmosphere } from "@/src/components/Atmosphere";
 import { FadeUp } from "@/src/components/animations";
 import { api, type Energy, type NextResponse } from "@/src/lib/api";
 import { useTheme } from "@/src/theme/ThemeProvider";
@@ -45,8 +47,12 @@ function CardWave({ color }: { color: string }) {
 }
 
 export default function NextScreen() {
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
   const router = useRouter();
+  // The reason band sits on accentSurface, where accent (#D4A24F) fails WCAG AA.
+  // #8a6a2e clears it in light mode; dark mode keeps the token.
+  const reasonColor = isDark ? colors.accent : "#8a6a2e";
+  const atm = useAtmosphere();
   const [energy, setEnergy] = useState<Energy>("medium");
   const [data, setData] = useState<NextResponse | null>(null);
   const [loading, setLoading] = useState(false);
@@ -93,7 +99,8 @@ export default function NextScreen() {
   const skipForNow = () => router.push("/(tabs)/inbox");
 
   return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: colors.background }]} edges={["top"]}>
+    <Atmosphere>
+    <SafeAreaView style={[styles.safe, { backgroundColor: "transparent" }]} edges={["top"]}>
       <ScrollView
         contentContainerStyle={styles.scroll}
         refreshControl={
@@ -105,14 +112,20 @@ export default function NextScreen() {
         }
         showsVerticalScrollIndicator={false}
       >
-        {/* Big greeting + peek otter */}
+        {/* Big greeting + waving otter */}
         <View style={styles.headerRow}>
           <View style={{ flex: 1 }}>
             <Text style={[styles.hello, { color: colors.text, fontFamily: fonts.displayBold }]}>
-              Hello,{name ? " " + name : ""}
+              {name ? `Hello, ${name}` : "Hello"}
             </Text>
           </View>
-          <OtterMascot size={90} variant="peek" />
+          {atm.otter.breathe ? (
+            <IdleBreath>
+              <OtterMascot size={atm.otter.size} variant={atm.otter.variant} />
+            </IdleBreath>
+          ) : (
+            <OtterMascot size={atm.otter.size} variant={atm.otter.variant} />
+          )}
         </View>
 
         <View style={{ height: spacing.md }} />
@@ -141,7 +154,7 @@ export default function NextScreen() {
             <OtterButton label="Try again" onPress={() => load(energy)} testID="next-retry" />
           </View>
         ) : data?.empty || !data?.step ? (
-          <View style={[styles.card, { borderColor: colors.border }]} testID="next-empty">
+          <View style={[styles.card, { backgroundColor: colors.warmSurface, borderColor: colors.warmBorder }]} testID="next-empty">
             <View style={{ alignItems: "center", marginBottom: spacing.base }}>
               <OtterMascot size={100} variant="sleep" />
             </View>
@@ -160,7 +173,7 @@ export default function NextScreen() {
               Add one thing you&apos;ve been avoiding.
             </Text>
             <View style={styles.reasonBand}>
-              <Text style={[styles.reasonText, { color: colors.accent, fontFamily: fonts.body }]}>
+              <Text style={[styles.reasonText, { color: reasonColor, fontFamily: fonts.body }]}>
                 We&apos;ll shrink it together.
               </Text>
             </View>
@@ -168,8 +181,8 @@ export default function NextScreen() {
           </View>
         ) : (
           <FadeUp key={data.step.id} duration={360}>
-            <View style={[styles.card, { borderColor: colors.border }]} testID="next-card">
-              <Text style={[styles.eyebrow, { color: colors.text, fontFamily: fonts.bodySemibold }]}>
+            <View style={[styles.card, { backgroundColor: colors.warmSurface, borderColor: colors.warmBorder }]} testID="next-card">
+              <Text style={[styles.eyebrow, { color: colors.textSubtle, fontFamily: fonts.bodySemibold }]}>
                 DO THIS NEXT
               </Text>
               <Text
@@ -193,7 +206,7 @@ export default function NextScreen() {
               ) : null}
               {data.reason ? (
                 <View style={[styles.reasonBand, { backgroundColor: colors.accentSurface }]}>
-                  <Text style={[styles.reasonText, { color: colors.accent, fontFamily: fonts.body }]}>
+                  <Text style={[styles.reasonText, { color: reasonColor, fontFamily: fonts.body }]}>
                     {data.reason}
                   </Text>
                 </View>
@@ -267,6 +280,7 @@ export default function NextScreen() {
         </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>
+    </Atmosphere>
   );
 }
 
@@ -282,10 +296,10 @@ const styles = StyleSheet.create({
   // salutation 1.7x larger than the one thing it exists to deliver. The brief
   // calls this screen "80% of the emotional experience" and names the micro-step
   // the Big Fraunces line. It is now the biggest thing on the screen.
-  hello: { fontSize: 28, lineHeight: 34, letterSpacing: -0.5 },
+  hello: { fontSize: 26, lineHeight: 32, letterSpacing: -0.5 },
   card: {
     borderWidth: 1,
-    borderRadius: radii.lg,
+    borderRadius: 20,
     padding: spacing.lg,
     overflow: "hidden",
   },
@@ -296,16 +310,16 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
     marginBottom: spacing.md,
   },
-  taskTitle: { fontSize: 34, lineHeight: 42, marginBottom: spacing.md },
+  taskTitle: { fontSize: 32, lineHeight: 39, marginBottom: spacing.md },
   minutesPill: {
     alignSelf: "flex-start",
     paddingHorizontal: spacing.md,
-    paddingVertical: 8,
+    paddingVertical: 7,
     borderRadius: 8,
     marginBottom: spacing.base,
   },
   minutesText: { fontSize: 14 },
-  parent: { fontSize: 15, marginBottom: spacing.base },
+  parent: { fontSize: 14, marginBottom: spacing.base },
   reasonBand: {
     marginHorizontal: -spacing.lg,
     marginTop: spacing.sm,

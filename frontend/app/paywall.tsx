@@ -135,7 +135,7 @@ export default function PaywallScreen() {
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
         {/* Hero */}
         <View style={styles.hero}>
-          <OtterMascot size={140} variant="default" />
+          <OtterMascot size={110} variant="sit-calm" />
           <Text style={[styles.title, { color: colors.text, fontFamily: fonts.displayBold }]}>
             One small support keeps Otterly warm.
           </Text>
@@ -173,11 +173,6 @@ export default function PaywallScreen() {
                       </Text>
                     </View>
                   ) : null}
-                  {k === "founding" ? (
-                    <View style={{ alignItems: "center", marginBottom: spacing.sm }}>
-                      <OtterMascot size={72} variant="crown" />
-                    </View>
-                  ) : null}
                   <Text style={[styles.planTitle, { color: k === "founding" ? colors.accent : colors.text, fontFamily: fonts.displayBold }]}>
                     {p.title}
                   </Text>
@@ -206,7 +201,7 @@ export default function PaywallScreen() {
           {FEATURES.map((f) => (
             <View key={f} style={styles.featureRow}>
               <View style={[styles.featureDot, { backgroundColor: colors.primary }]}>
-                <Check size={12} color={colors.onPrimary} strokeWidth={3} />
+                <Check size={11} color={colors.onPrimary} strokeWidth={3} />
               </View>
               <Text style={[styles.featureText, { color: colors.text, fontFamily: fonts.body }]}>
                 {f}
@@ -282,8 +277,8 @@ const styles = StyleSheet.create({
   scroll: { paddingHorizontal: spacing.lg, paddingBottom: spacing.xxl },
   hero: { alignItems: "center", marginTop: spacing.md, marginBottom: spacing.xl },
   title: {
-    fontSize: 30,
-    lineHeight: 38,
+    fontSize: 24,
+    lineHeight: 30,
     textAlign: "center",
     marginTop: spacing.md,
     marginBottom: spacing.sm,
@@ -305,7 +300,7 @@ const styles = StyleSheet.create({
   },
   planCard: {
     flex: 1,
-    borderRadius: radii.lg,
+    borderRadius: 16,
     padding: spacing.base,
     minHeight: 200,
     alignItems: "center",
@@ -334,11 +329,11 @@ const styles = StyleSheet.create({
   features: { gap: spacing.md },
   featureRow: { flexDirection: "row", alignItems: "center", gap: spacing.md },
   featureDot: {
-    width: 22, height: 22, borderRadius: 11, alignItems: "center", justifyContent: "center",
+    width: 20, height: 20, borderRadius: 10, alignItems: "center", justifyContent: "center",
   },
   featureText: { fontSize: 15, flex: 1, lineHeight: 20 },
   primaryCta: {
-    height: 56,
+    height: 54,
     borderRadius: radii.pill,
     alignItems: "center",
     justifyContent: "center",

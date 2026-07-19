@@ -237,7 +237,8 @@ export default function ShrinkScreen() {
               : <Play size={22} color={colors.primary} fill={colors.primary} strokeWidth={0} />}
           </TouchableOpacity>
           <View style={{ alignItems: "center", flexDirection: "row", gap: spacing.md }}>
-            <OtterMascot size={44} variant="focused" />
+            {/* Deliberate absence: no otter while a step is live — structure should
+                not compete with relatedness mid-task. The otter returns at all-done. */}
             <Text
               testID="timer-text"
               style={[styles.timerText, { color: colors.onPrimary, fontFamily: fonts.numeric }]}
@@ -419,7 +420,7 @@ export default function ShrinkScreen() {
         {/* Celebration banner when all steps are done */}
         {steps.length > 0 && steps.every((s) => s.done) ? (
           <View style={[styles.celebrateBanner, { backgroundColor: colors.primarySurface, borderColor: colors.primary }]}>
-            <OtterMascot size={70} variant="celebrate" />
+            <OtterMascot size={70} variant="hands-raised" />
             <View style={{ flex: 1, marginLeft: spacing.base }}>
               <Text style={{ color: colors.primary, fontFamily: fonts.displayBold, fontSize: 18 }}>
                 Every step done.
@@ -491,7 +492,7 @@ const styles = StyleSheet.create({
   smallBtn: { padding: spacing.sm },
   eyebrow: { fontSize: 12, letterSpacing: 4, textTransform: "uppercase" },
   scroll: { paddingHorizontal: spacing.lg, paddingBottom: spacing.xxl },
-  taskTitle: { fontSize: 44, lineHeight: 50, marginBottom: spacing.lg, marginTop: spacing.md },
+  taskTitle: { fontSize: 34, lineHeight: 40, marginBottom: spacing.lg, marginTop: spacing.md },
   roomOffer: {
     alignSelf: "flex-start",
     borderRadius: radii.pill,
@@ -516,7 +517,7 @@ const styles = StyleSheet.create({
   stepCard: {
     flexDirection: "row",
     alignItems: "center",
-    borderRadius: radii.lg,
+    borderRadius: 14,
     padding: spacing.base,
     marginBottom: spacing.md,
     gap: spacing.md,
