@@ -26,6 +26,10 @@
       "channel": "production",
       "ios": {
         "resourceClass": "m-medium"
+      },
+      "env": {
+        "EXPO_PUBLIC_BACKEND_URL": "https://api.getotterly.com",
+        "EXPO_PUBLIC_REVENUECAT_IOS_KEY": "appl_jbEmeBpYJfRMIFdMOWofDhGfVYq"
       }
     }
   },
