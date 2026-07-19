@@ -27,7 +27,8 @@
       "edgeToEdgeEnabled": true,
       "package": "com.getotterly.app",
       "permissions": [
-        "android.permission.RECORD_AUDIO"
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS"
       ]
     },
     "web": {
@@ -54,6 +55,18 @@
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "693e06e2-7395-4931-a13e-ba9965bd7956"
+      }
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/693e06e2-7395-4931-a13e-ba9965bd7956"
     }
   }
 }
