@@ -17,6 +17,7 @@ import Svg, { Path } from "react-native-svg";
 
 import { api, type RoomMessage } from "@/src/lib/api";
 import { OtterMascot } from "@/src/components/OtterMascot";
+import { IdleBreath } from "@/src/components/IdleBreath";
 import { useTheme } from "@/src/theme/ThemeProvider";
 import { fonts, radii, spacing } from "@/src/theme/tokens";
 import { storage } from "@/src/utils/storage";
@@ -146,7 +147,9 @@ export default function RoomScreen() {
             </Text>
           </TouchableOpacity>
 
-          <OtterMascot size={130} variant={sending ? "working" : "focus"} />
+          <IdleBreath>
+            <OtterMascot size={150} variant="working" />
+          </IdleBreath>
 
           <Text
             testID="room-title"
@@ -178,8 +181,8 @@ export default function RoomScreen() {
                 style={{
                   color: item.role === "user" ? colors.text : colors.text,
                   fontFamily: fonts.display,
-                  fontSize: 17,
-                  lineHeight: 26,
+                  fontSize: 16,
+                  lineHeight: 24,
                 }}
               >
                 {item.text}
@@ -236,7 +239,7 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     marginBottom: spacing.lg,
   },
-  title: { fontSize: 40, lineHeight: 48, marginTop: 0 },
+  title: { fontSize: 32, lineHeight: 40, marginTop: 0 },
   list: { padding: spacing.lg, gap: spacing.md, paddingBottom: spacing.xxl },
   bubble: {
     maxWidth: "82%",
