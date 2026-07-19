@@ -93,6 +93,24 @@ export const colorsDark = {
   onAccent: "#14201D",
 } as const;
 
+// Onboarding palette — a named, fixed light set. The first-run flow renders this
+// look regardless of device theme (approved Jul 19, 2026): a dark-device user sees
+// a light flow once. Do not build an onboardingDark set. inkSoft is #5f675f (not the
+// brief's #6c746d) so support text clears WCAG AA on the cream backgrounds; inkFaint
+// is for skip/Not-now affordances only, never content.
+export const onboardingLight = {
+  bg: "#eef1ee",
+  screen: "#f7f5f0",
+  screenWarm: "#f1ede4",
+  ink: "#39403b",
+  inkSoft: "#5f675f",
+  inkFaint: "#9aa39b",
+  water: "#7fa8a0",
+  waterSoft: "#cfe0db",
+  line: "#e2ddd2",
+  card: "#fffdf8",
+} as const;
+
 export type ThemeColors = typeof colorsLight;
 
 export const fonts = {

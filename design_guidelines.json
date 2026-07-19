@@ -35,6 +35,19 @@
         "primarySurface": "#1F2D29",
         "accent": "#E0B26A",
         "success": "#5E9E78"
+      },
+      "onboarding": {
+        "_note": "Fixed light palette for the first-run onboarding flow (approved 2026-07-19). The flow renders this look regardless of device theme; there is no onboardingDark set. inkSoft is #5f675f for WCAG AA support text on cream; inkFaint is for skip affordances only.",
+        "bg": "#eef1ee",
+        "screen": "#f7f5f0",
+        "screenWarm": "#f1ede4",
+        "ink": "#39403b",
+        "inkSoft": "#5f675f",
+        "inkFaint": "#9aa39b",
+        "water": "#7fa8a0",
+        "waterSoft": "#cfe0db",
+        "line": "#e2ddd2",
+        "card": "#fffdf8"
       }
     },
     "spacing": {
