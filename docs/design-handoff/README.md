@@ -8,8 +8,8 @@ Read this README first, then the four reference files in this folder.
 
 The Design app works from what it can see. Give it this whole `docs/design-handoff/` folder plus the raw materials it cannot infer:
 
-- Connect the `fmacademiajr/otterly-prod` repo, or upload these four reference files.
-- The otter art. The twelve mascot PNGs live at `frontend/assets/otter/otter-<variant>.png` in the repo. If you are uploading rather than connecting the repo, upload those PNGs too, or the app has nothing to place. Ask Fernando if they are not attached.
+- Connect the `fmacademiajr/otterly-prod` repo, or upload this folder.
+- The otter art is bundled in `otter/` (twelve PNGs). Upload that folder with the rest so the app has the real mascot to place. The mood map below says which otter belongs to which moment.
 - Current-screen reference. Screenshots of the live screens (the one-thing home, the Room, Shrink, paywall) help far more than the file paths. Attach them if you have them.
 
 Output target: visual concepts and mockups (an HTML/React artifact prototype is ideal, since one already exists as `onboarding-prototype.html`). Match the real palette, fonts, and otter variants below so the work is implementable, not just pretty.
@@ -40,12 +40,35 @@ Bring the existing screens toward the same calm register and make the otter a co
 
 ## The existing design system (respect it)
 
-- **Otter mascot** is already a component: `src/components/OtterMascot.tsx`. Variants: `default, crown, peek, line, line-peek, focus, focused, working, celebrate, float, wave, sleep`. PNG assets live in `assets/otter/otter-<variant>.png`; `line`/`line-peek` render as vector. Use the right variant per moment (for example a calm/focused variant while sitting with the user, `celebrate` used gently for the win). Do not invent new otter art without flagging it; prefer composing existing variants and motion.
+- **Otter mascot** renders through a component (`src/components/OtterMascot.tsx`) that swaps a pose by name. For art, use the real poses in `otter/` per the mood map above, not the repo's older `assets/otter/` placeholders. Do not invent new otter art or restyle the character; place the existing poses and animate them.
 - **Theme + tokens**: `src/theme/tokens.ts` (`colorsLight`, `colorsDark`, `spacing`, `radii`, `fonts`) and `src/theme/ThemeProvider.tsx`. Brand primary is sage/teal (`#5E8B82` light, `#7BA89F` dark). Fonts are Fraunces (display) and GeneralSans (body). **Dark mode is real** — the app has a light/dark toggle. Anything you style must work in both, or be a deliberate, flagged exception.
 - **Locked palette**: `design_guidelines.json` at the repo root pins the approved hex codes and says to stick to them strictly. See decision 1 below before introducing the prototype's cream palette.
 - Reusable components already exist (`OtterButton`, `OtterMascot`). Prefer them over new one-offs.
 
-## Design decisions to resolve (flag your choice in the PR)
+## Otter art library and mood map
+
+The real mascot art is in `otter/`. This is the source of truth for the otter, over any older placeholder in the repo's `frontend/assets/otter/`. One character throughout: a soft brown otter wrapped in a plaid blanket, rounded, hand-drawn, warm. Keep that identity. Do not restyle the otter, place it and animate it.
+
+Twelve poses, and where each one belongs. The onboarding staging (nothing on screens 1 to 3, first appearance on screen 4) still governs.
+
+| File | Pose and mood | Where it fits |
+| --- | --- | --- |
+| `otter-sit-attentive.png` | Sitting, paws together, leaning in, calm | Screen 4 hand-over. The otter offering the step. Primary S4 pick. |
+| `otter-sit-calm.png` | Sitting, paws tucked under blanket, settled | Screen 5 sit-with-me idle. Quiet, present, asking nothing. Primary S5 pick. |
+| `otter-float-awake.png` | Floating on back, eyes open, fully relaxed | Alt S5 idle, or a calm empty state. Most at-ease pose. |
+| `otter-hands-raised.png` | Arms up, gentle closed-mouth smile | Screen 6 the win, the restrained version. One small nod energy. Primary S6 pick. |
+| `otter-celebrate.png` | Arms thrown up, big open grin | The loud win. Use sparingly, not for S6 (spec says no confetti). Save for a bigger milestone. |
+| `otter-wave.png` | One paw raised, warm smile | A hello. Room entry or a returning-user greeting. Not onboarding S1 (no otter there). |
+| `otter-working.png` | Sitting with a laptop, "workin' on stuff" | The Room / body-double. Co-presence while the user works. |
+| `otter-working-bed.png` | Lying down at a laptop, cozy, transparent bg | Alt Room / body-double, softer and sleepier. |
+| `otter-focus-timer.png` | Blanket-wrapped, mildly grumpy, "active time running" badge | A focus/timer state, if a timer surface ever exists. Grumpy, so use with care given the no-pressure rule. |
+| `otter-float-asleep.png` | Floating on back asleep, serene | Rest, end of session, a very quiet state. |
+| `otter-sleep.png` | Curled in a ball asleep, transparent bg | Deep rest, night, or an idle-too-long state. |
+| `otter-pickleball.png` | Holding a pickleball paddle | Playful extra. Marketing, stickers, a fun empty state. Not core flow. |
+
+Two of these (`otter-working-bed.png`, `otter-sleep.png`) have transparent backgrounds; the rest sit on white. If you place one on a colored surface, knock out the white or ask for a transparent cut.
+
+## Design decisions to resolve (flag them in your notes)
 
 1. **Palette reconciliation.** The prototype uses a warm cream and water palette (bg `#eef1ee`, screen `#f7f5f0`, water `#7fa8a0`). The app's theme uses white/sage plus dark mode, and `design_guidelines.json` locks the hexes. Decide: either (a) extend the design system by adding the onboarding palette to `design_guidelines.json` and the tokens as a named, intentional set, or (b) map the prototype's intent onto the existing tokens. Recommendation: (a), scoped to onboarding, because the calm cream is load-bearing for the psychology — but it must be added to the system, not sprinkled inline. Also decide whether onboarding renders one fixed light look regardless of theme, or adapts to dark mode.
 2. **Otter variant mapping.** Choose which existing variant (or a new idle animation composed from one) serves screens 4 to 7. Do not add new art without flagging it.
