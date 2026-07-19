@@ -371,6 +371,73 @@ def ensure_referral(reply: str, user_text: str) -> str:
     return reply
 
 
+# ponytail: the Shrinker turns a task into an actionable plan, so a harmful task is
+# where a step-by-step does the most damage. This deterministic gate runs BEFORE the
+# LLM and short-circuits three classes it must never decompose. Like SELF_HARM_RE it
+# is a backstop anchored to keep routine health admin and workplace metaphor OUT — a
+# false positive costs one calm refusal, a false negative decomposes the wrong thing,
+# so the anchoring leans toward silence on ambiguity and is covered by test_shrink_safety.
+
+# Medical: only treatment ALTERATION, dosage manipulation, and restrictive/rapid-loss
+# patterns. Routine adherence and care admin ("take my meds", "refill prescription",
+# "book a doctor", "schedule therapy", "lose weight" with no number) are healthy and
+# shrinkable — they must NOT match.
+MEDICAL_RE = re.compile(
+    r"\b(?:stop|quit|come off|get off|taper(?:ing)?|wean(?:ing)?)\s+(?:(?:my|the|taking|off|on)\s+)*"
+    r"(?:meds|medication|antidepressants?|ssri|sertraline|prozac|zoloft|lexapro|adderall|vyvanse|ritalin|insulin)\b"
+    r"|\b(?:double|triple|skip|halve)\s+(?:my |the )?dose\b"
+    r"|\boverdose\b|\b\d+\s?mg\b|\b\d+\s?milligrams?\b"
+    r"|\b(?:starve|purge)\b|\bmake myself (?:throw up|vomit)\b|\bstop eating\b"
+    r"|\blose\s+\d+\s?(?:lbs?|kg|pounds|kilos)\b"
+    r"|\bself[- ]?medicat",
+    re.I,
+)
+
+# Harm to others / violence, anchored to a person or weapon object so workplace
+# metaphor ("kill the presentation", "attack the backlog", "crush the deck") stays clear.
+HARM_RE = re.compile(
+    r"\b(?:hurt|harm|kill|attack|stab|shoot|poison|assault|beat up|beat down)\s+"
+    r"(?:him|her|them|someone|somebody|people|my (?:ex|boss|coworker|co-worker|neighbou?r|wife|husband|partner|friend|kid|child))\b"
+    r"|\bmake a (?:bomb|weapon)\b|\bget revenge on\b|\bstalk\s+(?:him|her|them|my)\b",
+    re.I,
+)
+
+REFUSAL_MEDICAL = (
+    "This one is medical, and I'm not the right tool for it. Please talk to a doctor "
+    "or pharmacist. I can still sit with you in the Room if you want company."
+)
+REFUSAL_HARM = (
+    "I can't help break this one down. If someone might get hurt, please reach a "
+    "crisis line or your local authorities."
+)
+
+# Shrink-gate only (NOT wired into the Room's ensure_referral, whose regex is tuned
+# and tested separately). Catches self-injury by method that reads as a "task", with
+# a negative lookahead so benign continuations stay clear: "cut myself off",
+# "burn myself out", "cut myself a slice".
+SELF_INJURY_RE = re.compile(
+    r"\b(?:cut|burn|starve|injure)\s+myself\b(?!\s+(?:a|an|some|the|to|off|out|short|slack|sick|crazy))"
+    r"|\bself[- ]?harm|\boverdose\b",
+    re.I,
+)
+
+
+def classify_task_safety(text: str) -> Tuple[str, str]:
+    """Deterministic input gate for the Shrinker. Returns (category, message) with
+    category in {"ok","crisis","medical","harm"}. Priority crisis > harm > medical, so
+    'starve myself' routes to the crisis referral, not the medical deflection. A
+    backstop for the model's own judgment, not a replacement; anchored to keep healthy,
+    shrinkable tasks OUT of the gate."""
+    t = text or ""
+    if SELF_HARM_RE.search(t) or SELF_INJURY_RE.search(t):
+        return "crisis", REFERRAL
+    if HARM_RE.search(t):
+        return "harm", REFUSAL_HARM
+    if MEDICAL_RE.search(t):
+        return "medical", REFUSAL_MEDICAL
+    return "ok", ""
+
+
 # ---------- Health ----------
 
 @api.get("/")
@@ -852,6 +919,16 @@ SHAME_RE = re.compile(
     re.I,
 )
 
+# Output backstop: the input gate and the prompt should stop these upstream, but a
+# step that names self-harm or violence must never reach the database even if the
+# model emits one. Anchored to an explicit self/other object so "cut the onions" and
+# "shoot the video" stay clear.
+STEP_UNSAFE_RE = re.compile(
+    r"\b(?:kill|hurt|harm|stab|strangle|cut|poison)\s+(?:myself|yourself|him|her|them|someone|somebody)\b"
+    r"|\boverdose\b|\bswallow\s+(?:all|the whole|a whole)\b.*?\b(?:pills|bottle)\b|\bmake a (?:bomb|weapon)\b",
+    re.I,
+)
+
 # ponytail: minute ceilings are a product guess, not a research finding. Tune on completion data.
 MAX_MINUTES = {"activation": 5, "easy": 5, "medium": 10, "hard": 25}
 LADDER = [1, 2, 5, 10, 25]
@@ -884,7 +961,9 @@ def _validate_steps(raw_steps: list, difficulty: str) -> Tuple[List[dict], List[
         bucket = "activation" if i == 0 else difficulty  # keyed on i, NOT len(clean)
         want = int(s.get("minutes") or 10)
 
-        if first in NON_IMPERATIVE:
+        if STEP_UNSAFE_RE.search(text):
+            problems.append(f'step {i+1} "{text}" raises a safety concern')
+        elif first in NON_IMPERATIVE:
             problems.append(f'step {i+1} "{text}" is not an instruction, start with a verb')
         elif first in ABSTRACT_VERBS:
             problems.append(f'step {i+1} "{text}" starts with "{first}", name a physical action')
@@ -921,6 +1000,7 @@ Rules:
 - Give each step an HONEST minute estimate. Do not shrink the number to fit a limit. If the work is 25 minutes, say 25 and make the step smaller instead.
 - Tone: warm, brief, no shame. Never mention how the user 'should' have done this earlier. Never open a step with "Just", "Simply", or "Finally".
 - Step size for steps 2 and up: "easy" = under 5 min each. "medium" = under 10 min. "hard" = under 25 min. This never applies to step 1.
+- Safety: never produce steps for self-harm, altering or stopping prescribed medication, disordered eating, or harming anyone. If the task is one of these, return {"steps": []} and nothing else. Routine health admin (taking or refilling medication, booking a doctor, gentle exercise) is fine.
 
 Return JSON shape:
 {"steps": [{"text": "Open the doc", "minutes": 2}, {"text": "Type the first paragraph", "minutes": 10}]}
@@ -945,6 +1025,13 @@ async def shrink_task(task_id: str, payload: ShrinkRequest, who=Depends(resolve_
     if not task_doc:
         raise HTTPException(404, "task not found")
     task = Task(**{k: v for k, v in task_doc.items() if k != "owner"})
+
+    # Safety gate BEFORE the LLM call: never decompose a crisis / medical / harm task
+    # into an actionable plan. Costs no API call and no free-tier shrink. 422 carries
+    # the calm message + the right resource; the client shows it without a "try again".
+    cat, msg = classify_task_safety(f"{task.title} {task.note or ''}")
+    if cat != "ok":
+        raise HTTPException(422, detail=msg)
 
     # ponytail: re-shrink destroys finished steps. Checked BEFORE the LLM call so a
     # refusal costs no API call and no free-tier shrink. db.activity survives either
@@ -1092,6 +1179,26 @@ async def next_action(payload: NextRequest, who=Depends(resolve_owner)):
     )
 
 
+# ---------- Safety pre-check ----------
+
+class ClassifyRequest(BaseModel):
+    text: str = Field(max_length=2200)
+
+
+class ClassifyResponse(BaseModel):
+    category: str  # "ok" | "crisis" | "medical" | "harm"
+    message: str
+
+
+@api.post("/tasks/classify", response_model=ClassifyResponse)
+async def classify_task(payload: ClassifyRequest, who=Depends(resolve_owner)):
+    """Stateless safety pre-check for a task BEFORE it is created or shrunk. Lets the
+    onboarding divert a crisis / medical / harm disclosure to a calm pause without ever
+    persisting it. Pure function over the same gate the Shrinker enforces server-side."""
+    cat, msg = classify_task_safety(payload.text or "")
+    return ClassifyResponse(category=cat, message=msg)
+
+
 # ---------- Braindump ----------
 
 BRAINDUMP_SYSTEM = """You are Otterly. The user is going to pour out everything on their mind. Extract the distinct tasks / things they need to do into a short list.
@@ -1100,6 +1207,7 @@ Rules:
 - Return STRICT JSON only.
 - Each task title is a short imperative.
 - Merge duplicates. Skip pure feelings.
+- Skip anything about self-harm, altering or stopping medication, or harming someone.
 - Max 12 items.
 
 JSON shape: {"tasks": ["...", "..."]}

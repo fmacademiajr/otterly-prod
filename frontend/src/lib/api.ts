@@ -107,6 +107,11 @@ export const api = {
   listTasks: () => req<Task[]>("/api/tasks"),
   createTask: (title: string, note?: string) =>
     req<Task>("/api/tasks", { method: "POST", body: JSON.stringify({ title, note }) }),
+  classifyTask: (text: string) =>
+    req<{ category: "ok" | "crisis" | "medical" | "harm"; message: string }>(
+      "/api/tasks/classify",
+      { method: "POST", body: JSON.stringify({ text }) }
+    ),
   deleteTask: (id: string) =>
     req<{ ok: boolean }>(`/api/tasks/${id}`, { method: "DELETE" }),
   listSteps: (taskId: string) => req<Step[]>(`/api/tasks/${taskId}/steps`),
