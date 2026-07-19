@@ -204,19 +204,23 @@ export default function YouScreen() {
             </View>
           ) : (
             <View style={[styles.accountCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-              <TouchableOpacity
-                testID="signin"
-                onPress={handleGoogleSignIn}
-                activeOpacity={0.7}
-                style={{ flexDirection: "row", alignItems: "center", gap: spacing.md }}
-              >
-                <View style={[styles.googleBadge, { borderColor: colors.border }]}>
-                  <Text style={{ fontFamily: fonts.bodySemibold, fontSize: 18 }}>G</Text>
-                </View>
-                <Text style={{ color: colors.text, fontFamily: fonts.bodySemibold, fontSize: 16 }}>
-                  Sign in with Google
-                </Text>
-              </TouchableOpacity>
+              {/* Apple-only for launch: the old Emergent-routed Google button is hidden.
+                  Self-owned Google sign-in returns in build 2 (branch feat-google-signin). */}
+              {false && (
+                <TouchableOpacity
+                  testID="signin"
+                  onPress={handleGoogleSignIn}
+                  activeOpacity={0.7}
+                  style={{ flexDirection: "row", alignItems: "center", gap: spacing.md }}
+                >
+                  <View style={[styles.googleBadge, { borderColor: colors.border }]}>
+                    <Text style={{ fontFamily: fonts.bodySemibold, fontSize: 18 }}>G</Text>
+                  </View>
+                  <Text style={{ color: colors.text, fontFamily: fonts.bodySemibold, fontSize: 16 }}>
+                    Sign in with Google
+                  </Text>
+                </TouchableOpacity>
+              )}
 
               {appleAvailable ? (
                 <AppleAuthentication.AppleAuthenticationButton
