@@ -13,7 +13,7 @@ import Svg, { Path, Circle, Ellipse, G } from "react-native-svg";
  *   "peek"    — smaller floating head (used inline)
  */
 
-type Variant = "default" | "crown" | "peek" | "line" | "line-peek" | "focus" | "focused" | "working" | "celebrate" | "float" | "wave" | "sleep";
+type Variant = "default" | "crown" | "peek" | "line" | "line-peek" | "focus" | "focused" | "working" | "celebrate" | "float" | "wave" | "sleep" | "sit-attentive" | "sit-calm" | "hands-raised";
 
 const IMAGE_ASSETS: Record<Variant, any> = {
   default: require("@/assets/otter/otter-default.png"),
@@ -26,6 +26,10 @@ const IMAGE_ASSETS: Record<Variant, any> = {
   wave: require("@/assets/otter/otter-wave.png"),
   sleep: require("@/assets/otter/otter-sleep.png"),
   peek: require("@/assets/otter/otter-peek.png"),
+  // Onboarding cuts (transparent-background) — see docs/design-handoff mood map
+  "sit-attentive": require("@/assets/otter/otter-sit-attentive.png"),
+  "sit-calm": require("@/assets/otter/otter-sit-calm.png"),
+  "hands-raised": require("@/assets/otter/otter-hands-raised.png"),
   // Line SVG fallbacks remain for edge cases
   line: null,
   "line-peek": null,

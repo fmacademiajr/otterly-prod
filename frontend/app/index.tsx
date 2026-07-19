@@ -11,7 +11,7 @@ export default function Index() {
   useEffect(() => {
     (async () => {
       const done = await storage.getItem<boolean>("otterly.onboarded", false);
-      router.replace(done ? "/(tabs)/next" : "/onboarding/welcome");
+      router.replace(done ? "/(tabs)/next" : "/onboarding");
     })();
   }, [router]);
 
