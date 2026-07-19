@@ -73,9 +73,12 @@ For a licensed reviewer (ADHD-focused psychologist or OT). The point of review i
 4. Review a sample of real Shrinker outputs for the no-shame, activation-first, honest-estimate properties.
 5. Flag any category or phrasing that a frozen, ashamed user could read as pressure or judgment.
 
+## Onboarding disclosure path
+
+Closed. The onboarding first-run task ran the shrink with a silent "Stand up." fallback, so a disclosure typed into S3 could be swallowed. Now the flow calls `POST /api/tasks/classify` (a stateless pre-check over the same gate) BEFORE creating or shrinking anything. A non-ok verdict diverts to a calm safety pause (`SafetyPause`) carrying the right resource, with no fake win and nothing persisted. If the pre-check is unreachable (offline), the flow falls through and the backend shrink gate still backstops the same classes server-side.
+
 ## Known gaps / follow-ups
 
-- Onboarding S3: a crisis disclosure typed into the first-run task field currently falls through to the cached "Stand up." fallback rather than surfacing the referral, because onboarding runs the shrink with a silent fallback. The main-app Shrinker and the Room are both gated; onboarding is the one path that can swallow a disclosure. Fix: run `classify_task_safety` in the onboarding shrink and surface the referral. Tracked, not yet built.
 - Locale: the gate is English-anchored. A Taglish pattern set is needed before a PH-language launch.
 - Paraphrase: deterministic layers catch explicit phrasings only. Consider an LLM safety classifier as a fifth layer if eval coverage shows gaps.
 - The crisis resource also needs a permanent home in Settings and the App Store listing, per the onboarding flow spec's open decisions.

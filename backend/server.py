@@ -1179,6 +1179,26 @@ async def next_action(payload: NextRequest, who=Depends(resolve_owner)):
     )
 
 
+# ---------- Safety pre-check ----------
+
+class ClassifyRequest(BaseModel):
+    text: str = Field(max_length=2200)
+
+
+class ClassifyResponse(BaseModel):
+    category: str  # "ok" | "crisis" | "medical" | "harm"
+    message: str
+
+
+@api.post("/tasks/classify", response_model=ClassifyResponse)
+async def classify_task(payload: ClassifyRequest, who=Depends(resolve_owner)):
+    """Stateless safety pre-check for a task BEFORE it is created or shrunk. Lets the
+    onboarding divert a crisis / medical / harm disclosure to a calm pause without ever
+    persisting it. Pure function over the same gate the Shrinker enforces server-side."""
+    cat, msg = classify_task_safety(payload.text or "")
+    return ClassifyResponse(category=cat, message=msg)
+
+
 # ---------- Braindump ----------
 
 BRAINDUMP_SYSTEM = """You are Otterly. The user is going to pour out everything on their mind. Extract the distinct tasks / things they need to do into a short list.

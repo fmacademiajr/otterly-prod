@@ -21,6 +21,7 @@ import { Shrink } from "./screens/Shrink";
 import { SitWithMe } from "./screens/SitWithMe";
 import { TheWin } from "./screens/TheWin";
 import { HowOtterlyBehaves } from "./screens/HowOtterlyBehaves";
+import { SafetyPause } from "./screens/SafetyPause";
 
 const EASE = Easing.bezier(0.4, 0, 0.2, 1);
 
@@ -48,7 +49,8 @@ export function OnboardingFlow() {
   const router = useRouter();
   const reduced = useReducedMotion();
   const store = useOnboardingState();
-  const [step, setStep] = useState(1); // 1..7
+  const [step, setStep] = useState(1); // 1..7, or 8 = safety pause
+  const [safety, setSafety] = useState<{ message: string } | null>(null);
 
   // S3 -> S4: create the task, run the Shrinker, and race it against a ~2.5s
   // window. A frozen user cannot wait, so if generation is slow or the device is
@@ -81,9 +83,21 @@ export function OnboardingFlow() {
     }
   };
 
-  const onOk3 = () => {
+  const onOk3 = async () => {
     const clean = store.task.trim();
     if (!clean) return;
+    // Safety pre-check BEFORE creating or shrinking anything, so a crisis / medical /
+    // harm disclosure is never persisted and never gets a fake "first step". If the
+    // check is unreachable (offline), fall through — the backend shrink gate still
+    // backstops the same classes server-side.
+    try {
+      const res = await api.classifyTask(clean);
+      if (res.category !== "ok") {
+        setSafety({ message: res.message });
+        setStep(8);
+        return;
+      }
+    } catch {}
     runShrink(clean);
     setStep(4);
   };
@@ -132,6 +146,9 @@ export function OnboardingFlow() {
       </Layer>
       <Layer active={step === 7}>
         <HowOtterlyBehaves onChoose={finish} />
+      </Layer>
+      <Layer active={step === 8}>
+        {safety ? <SafetyPause message={safety.message} onDone={() => finish(false)} /> : null}
       </Layer>
     </View>
   );
