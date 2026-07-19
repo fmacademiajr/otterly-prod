@@ -16,6 +16,7 @@ import { EnergyPill } from "@/src/components/EnergyPill";
 import { OtterMascot } from "@/src/components/OtterMascot";
 import { OtterButton } from "@/src/components/OtterButton";
 import { IdleBreath } from "@/src/components/IdleBreath";
+import { Atmosphere, useAtmosphere } from "@/src/components/Atmosphere";
 import { FadeUp } from "@/src/components/animations";
 import { api, type Energy, type NextResponse } from "@/src/lib/api";
 import { useTheme } from "@/src/theme/ThemeProvider";
@@ -51,6 +52,7 @@ export default function NextScreen() {
   // The reason band sits on accentSurface, where accent (#D4A24F) fails WCAG AA.
   // #8a6a2e clears it in light mode; dark mode keeps the token.
   const reasonColor = isDark ? colors.accent : "#8a6a2e";
+  const atm = useAtmosphere();
   const [energy, setEnergy] = useState<Energy>("medium");
   const [data, setData] = useState<NextResponse | null>(null);
   const [loading, setLoading] = useState(false);
@@ -97,7 +99,8 @@ export default function NextScreen() {
   const skipForNow = () => router.push("/(tabs)/inbox");
 
   return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: colors.background }]} edges={["top"]}>
+    <Atmosphere>
+    <SafeAreaView style={[styles.safe, { backgroundColor: "transparent" }]} edges={["top"]}>
       <ScrollView
         contentContainerStyle={styles.scroll}
         refreshControl={
@@ -116,9 +119,13 @@ export default function NextScreen() {
               {name ? `Hello, ${name}` : "Hello"}
             </Text>
           </View>
-          <IdleBreath>
-            <OtterMascot size={76} variant="wave" />
-          </IdleBreath>
+          {atm.otter.breathe ? (
+            <IdleBreath>
+              <OtterMascot size={atm.otter.size} variant={atm.otter.variant} />
+            </IdleBreath>
+          ) : (
+            <OtterMascot size={atm.otter.size} variant={atm.otter.variant} />
+          )}
         </View>
 
         <View style={{ height: spacing.md }} />
@@ -273,6 +280,7 @@ export default function NextScreen() {
         </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>
+    </Atmosphere>
   );
 }
 
