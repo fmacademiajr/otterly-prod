@@ -177,6 +177,11 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ identity_token, device_id, full_name }),
     }),
+  googleAuth: (id_token: string, device_id?: string) =>
+    req<StoredUser & { session_token: string; expires_at: string }>("/api/auth/google", {
+      method: "POST",
+      body: JSON.stringify({ id_token, device_id }),
+    }),
   me: () => req<StoredUser>("/api/auth/me"),
   logout: () => req<{ ok: boolean }>("/api/auth/logout", { method: "POST" }),
   deleteAccount: async () =>

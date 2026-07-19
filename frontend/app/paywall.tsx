@@ -57,7 +57,7 @@ const FEATURES = [
 export default function PaywallScreen() {
   const { colors } = useTheme();
   const router = useRouter();
-  const { user, status, signIn } = useAuth();
+  const { user, status, signInWithGoogle } = useAuth();
   const [selected, setSelected] = useState<PlanKey>("founding");
   const [packages, setPackages] = useState<any[]>([]);
   const [access, setAccess] = useState<AccessSnapshot | null>(null);
@@ -221,7 +221,7 @@ export default function PaywallScreen() {
           <View>
             <TouchableOpacity
               testID="paywall-signin"
-              onPress={signIn}
+              onPress={signInWithGoogle}
               style={[styles.primaryCta, { backgroundColor: colors.accent }]}
             >
               <Text style={{ color: colors.onAccent, fontFamily: fonts.bodySemibold, fontSize: 17 }}>

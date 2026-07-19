@@ -72,6 +72,10 @@ APPLE_BUNDLE_ID = os.environ.get("APPLE_BUNDLE_ID", "com.getotterly.app")
 APPLE_ISSUER = "https://appleid.apple.com"
 _apple_jwks = jwt.PyJWKClient(f"{APPLE_ISSUER}/auth/keys")  # PyJWKClient caches keys internally
 
+GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "")
+GOOGLE_ISSUERS = ["accounts.google.com", "https://accounts.google.com"]
+_google_jwks = jwt.PyJWKClient("https://www.googleapis.com/oauth2/v3/certs")
+
 client = AsyncIOMotorClient(MONGO_URL)
 db = client[DB_NAME]
 
@@ -173,6 +177,11 @@ class AppleAuthRequest(BaseModel):
     identity_token: str
     device_id: Optional[str] = None
     full_name: Optional[str] = Field(default=None, max_length=100)  # first authorization only
+
+
+class GoogleAuthRequest(BaseModel):
+    id_token: str
+    device_id: Optional[str] = None
 
 
 class UserProfile(BaseModel):
@@ -505,6 +514,90 @@ async def auth_apple(payload: AppleAuthRequest):
             # Store email ONLY when present AND verified. OMIT the key otherwise —
             # never email: None. An unverified email is untrusted: keying or storing
             # it lets an attacker's Apple account squat a stranger's real address, and
+            # an unverified address matching an existing user would collide on the
+            # partial-unique email index (that user already owns it).
+            if email and email_verified:
+                doc["email"] = email
+            await db.users.insert_one(doc)
+
+    # Mint our own session — the Emergent path reuses Emergent's token, this path can't.
+    server_token = secrets.token_urlsafe(32)
+    expires_at = datetime.now(timezone.utc) + timedelta(days=7)
+    await db.user_sessions.insert_one({
+        "session_token": server_token,
+        "user_id": user_id,
+        "expires_at": expires_at,  # native datetime — the TTL index depends on it
+        "created_at": datetime.now(timezone.utc),
+    })
+
+    await migrate_device_data(payload.device_id, user_id)
+
+    user = await db.users.find_one({"user_id": user_id}, {"_id": 0})
+    return {
+        "user_id": user_id,
+        "email": user.get("email", ""),
+        "name": user.get("name", ""),
+        "picture": user.get("picture"),
+        "session_token": server_token,
+        "expires_at": expires_at.isoformat(),
+    }
+
+
+@api.post("/auth/google")
+async def auth_google(payload: GoogleAuthRequest):
+    """Sign in with Google. We verify Google's id_token signature/claims ourselves and
+    mint our OWN session (this replaces the Emergent-proxied Google path — see
+    /api/auth/session, left untouched). Keys on Google's `sub`, never email alone."""
+    try:
+        signing_key = _google_jwks.get_signing_key_from_jwt(payload.id_token)
+        claims = jwt.decode(
+            payload.id_token,
+            signing_key.key,
+            algorithms=["RS256"],
+            audience=GOOGLE_CLIENT_ID,
+            issuer=GOOGLE_ISSUERS,
+        )  # exp/iat verified by default
+    except jwt.PyJWTError:
+        # NEVER a bare Exception here — that is how a skipped signature check hides.
+        raise HTTPException(401, "invalid Google identity token")
+
+    sub = claims.get("sub")
+    if not sub:
+        raise HTTPException(401, "invalid Google identity token")
+
+    email = claims.get("email")
+    ev = claims.get("email_verified")
+    email_verified = ev is True or ev == "true"  # Google sends bool true OR string "true"
+
+    existing = await db.users.find_one({"google_sub": sub}, {"_id": 0})
+    if existing:
+        user_id = existing["user_id"]
+        # never overwrite an existing name with None
+        if claims.get("name") and not existing.get("name"):
+            await db.users.update_one({"user_id": user_id}, {"$set": {"name": claims.get("name")}})
+    else:
+        # Merge onto an existing user ONLY when the email is present AND verified —
+        # entitlements key on user_id, so forking strands a paid subscription; and an
+        # unverified email must never merge (account-linking takeover).
+        merged = await db.users.find_one({"email": email}, {"_id": 0}) if (email and email_verified) else None
+        if merged:
+            user_id = merged["user_id"]
+            updates = {"google_sub": sub}
+            if claims.get("name") and not merged.get("name"):
+                updates["name"] = claims.get("name")
+            await db.users.update_one({"user_id": user_id}, {"$set": updates})
+        else:
+            user_id = f"user_{uuid.uuid4().hex[:12]}"
+            doc = {
+                "user_id": user_id,
+                "google_sub": sub,
+                "name": claims.get("name") or (email.split("@")[0] if (email and email_verified) else "there"),
+                "picture": claims.get("picture"),
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            }
+            # Store email ONLY when present AND verified. OMIT the key otherwise —
+            # never email: None. An unverified email is untrusted: keying or storing
+            # it lets an attacker's Google account squat a stranger's real address, and
             # an unverified address matching an existing user would collide on the
             # partial-unique email index (that user already owns it).
             if email and email_verified:
@@ -1280,6 +1373,7 @@ INDEX_SPECS = [
     ("users", "email", dict(unique=True, partialFilterExpression={"email": {"$type": "string"}})),
     ("users", "apple_sub", dict(unique=True, sparse=True)),
     ("users", "user_id", dict(unique=True)),
+    ("users", "google_sub", dict(unique=True, sparse=True)),
     ("user_sessions", "session_token", dict(unique=True)),
     ("user_sessions", "user_id", dict()),
     ("user_sessions", "expires_at", dict(expireAfterSeconds=0)),

@@ -1,8 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useState } from "react";
-import { Platform } from "react-native";
-import * as WebBrowser from "expo-web-browser";
-import * as Linking from "expo-linking";
 import * as AppleAuthentication from "expo-apple-authentication";
+import { GoogleSignin, isCancelledResponse } from "@react-native-google-signin/google-signin";
 
 import { identity, type StoredUser } from "@/src/lib/identity";
 import { api, ApiError } from "@/src/lib/api";
@@ -11,29 +9,14 @@ import { storage } from "@/src/utils/storage";
 type AuthCtx = {
   status: "loading" | "authed" | "anonymous";
   user: StoredUser | null;
-  signIn: () => Promise<void>;
   signInWithApple: () => Promise<void>;
+  signInWithGoogle: () => Promise<void>;
   signOut: () => Promise<void>;
   deleteAccount: () => Promise<void>;
   refresh: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthCtx | null>(null);
-
-const EMERGENT_AUTH_URL = "https://auth.emergentagent.com/";
-
-async function processSessionToken(sessionToken: string) {
-  const deviceId = await identity.getDeviceId();
-  const res = await api.exchangeSession(sessionToken, deviceId);
-  await identity.setToken(res.session_token);
-  await identity.setUser({
-    user_id: res.user_id,
-    email: res.email,
-    name: res.name,
-    picture: res.picture,
-  });
-  return res;
-}
 
 async function processAppleCredential(identityToken: string, fullName?: string) {
   const deviceId = await identity.getDeviceId();
@@ -48,24 +31,17 @@ async function processAppleCredential(identityToken: string, fullName?: string) 
   return res;
 }
 
-function extractSessionIdFromUrl(url: string | null | undefined): string | null {
-  if (!url) return null;
-  try {
-    // Support hash (#session_id=...) and query (?session_id=...)
-    const hashIdx = url.indexOf("#");
-    if (hashIdx >= 0) {
-      const params = new URLSearchParams(url.substring(hashIdx + 1));
-      const s = params.get("session_id");
-      if (s) return s;
-    }
-    const qIdx = url.indexOf("?");
-    if (qIdx >= 0) {
-      const params = new URLSearchParams(url.substring(qIdx + 1));
-      const s = params.get("session_id");
-      if (s) return s;
-    }
-  } catch {}
-  return null;
+async function processGoogleIdToken(idToken: string) {
+  const deviceId = await identity.getDeviceId();
+  const res = await api.googleAuth(idToken, deviceId);
+  await identity.setToken(res.session_token);
+  await identity.setUser({
+    user_id: res.user_id,
+    email: res.email,
+    name: res.name,
+    picture: res.picture,
+  });
+  return res;
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -73,27 +49,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<StoredUser | null>(null);
 
   const bootstrap = useCallback(async () => {
-    // On web, process a redirect-embedded session_id first.
-    if (Platform.OS === "web" && typeof window !== "undefined") {
-      const sid = extractSessionIdFromUrl(window.location.href);
-      if (sid) {
-        try {
-          const res = await processSessionToken(sid);
-          setUser({
-            user_id: res.user_id,
-            email: res.email,
-            name: res.name,
-            picture: res.picture,
-          });
-          window.history.replaceState(null, "", window.location.pathname);
-          setStatus("authed");
-          return;
-        } catch (e) {
-          // fall through to existing token check
-        }
-      }
-    }
-
     // Existing token check
     const token = await identity.getToken();
     if (token) {
@@ -120,21 +75,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     bootstrap();
   }, [bootstrap]);
 
-  const signIn = useCallback(async () => {
-    if (Platform.OS === "web") {
-      if (typeof window === "undefined") return;
-      const redirectUrl = window.location.origin + "/";
-      window.location.href = `${EMERGENT_AUTH_URL}?redirect=${encodeURIComponent(redirectUrl)}`;
-      return;
-    }
-
-    const redirectUrl = Linking.createURL("");
-    const authUrl = `${EMERGENT_AUTH_URL}?redirect=${encodeURIComponent(redirectUrl)}`;
-    const result = await WebBrowser.openAuthSessionAsync(authUrl, redirectUrl);
-    if (result.type !== "success" || !result.url) return;
-    const sid = extractSessionIdFromUrl(result.url);
-    if (!sid) return;
-    const res = await processSessionToken(sid);
+  const signInWithGoogle = useCallback(async () => {
+    GoogleSignin.configure({ iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID });
+    await GoogleSignin.hasPlayServices();
+    const response = await GoogleSignin.signIn();
+    if (isCancelledResponse(response)) return; // user tapped Cancel, not a failure
+    const idToken = response.data.idToken;
+    if (!idToken) return;
+    const res = await processGoogleIdToken(idToken);
     setUser({
       user_id: res.user_id,
       email: res.email,
@@ -200,7 +148,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <AuthContext.Provider
-      value={{ status, user, signIn, signInWithApple, signOut, deleteAccount, refresh: bootstrap }}
+      value={{ status, user, signInWithApple, signInWithGoogle, signOut, deleteAccount, refresh: bootstrap }}
     >
       {children}
     </AuthContext.Provider>

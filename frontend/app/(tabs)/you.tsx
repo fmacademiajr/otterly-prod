@@ -33,7 +33,7 @@ const PRIVACY_URL = "https://getotterly.com/privacy";
 export default function YouScreen() {
   const { colors, isDark, mode, setMode } = useTheme();
   const router = useRouter();
-  const { user, status, signIn, signInWithApple, signOut, deleteAccount } = useAuth();
+  const { user, status, signInWithGoogle, signInWithApple, signOut, deleteAccount } = useAuth();
   const [stats, setStats] = useState<StreakStats | null>(null);
   const [access, setAccess] = useState<AccessSnapshot | null>(null);
   const [name, setName] = useState("");
@@ -107,11 +107,11 @@ export default function YouScreen() {
   const handleGoogleSignIn = useCallback(async () => {
     setSignInError(null);
     try {
-      await signIn();
+      await signInWithGoogle();
     } catch {
       setSignInError("Sign in didn't work. Try again.");
     }
-  }, [signIn]);
+  }, [signInWithGoogle]);
 
   const handleAppleSignIn = useCallback(async () => {
     setSignInError(null);

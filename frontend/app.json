@@ -50,7 +50,13 @@
       "expo-secure-store",
       "@sentry/react-native",
       "expo-audio",
-      "expo-apple-authentication"
+      "expo-apple-authentication",
+      [
+        "@react-native-google-signin/google-signin",
+        {
+          "iosUrlScheme": "com.googleusercontent.apps.REPLACE_WITH_REVERSED_CLIENT_ID"
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true

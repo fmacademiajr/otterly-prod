@@ -253,10 +253,10 @@ def _assert_source_untouched() -> list:
     out.append(("emergent path: token line intact",
                 'server_token = data.get("session_token") or payload.session_token' in src,
                 "line missing"))
-    n = src.count("migrate_device_data(")  # 1 def + 2 calls == 3 occurrences of the name
+    n = src.count("migrate_device_data(")  # 1 def + 3 calls == 4 occurrences of the name
     calls = src.count("await migrate_device_data(")
-    out.append(("migrate_device_data called exactly twice (both paths)",
-                calls == 2, f"call sites: {calls}, name occurrences: {src.count('migrate_device_data')}"))
+    out.append(("migrate_device_data called exactly three times (session, apple, google paths)",
+                calls == 3, f"call sites: {calls}, name occurrences: {src.count('migrate_device_data')}"))
     return out
 
 
