@@ -119,7 +119,7 @@ export const api = {
     taskId: string,
     difficulty: "easy" | "medium" | "hard",
     deep = false,
-    opts: { force?: boolean; tooBig?: boolean } = {}
+    opts: { force?: boolean; tooBig?: boolean; energy?: Energy } = {}
   ) =>
     req<Step[]>(`/api/tasks/${taskId}/shrink`, {
       method: "POST",
@@ -128,10 +128,13 @@ export const api = {
         deep,
         force: opts.force ?? false,
         too_big: opts.tooBig ?? false,
+        energy: opts.energy ?? "medium",
       }),
     }),
   toggleStep: (stepId: string, done: boolean) =>
     req<Step>(`/api/steps/${stepId}`, { method: "PATCH", body: JSON.stringify({ done }) }),
+  resplitStep: (stepId: string) =>
+    req<Step[]>(`/api/steps/${stepId}/resplit`, { method: "POST" }),
   next: (energy: Energy, minutes?: number) =>
     req<NextResponse>("/api/next", { method: "POST", body: JSON.stringify({ energy, minutes }) }),
   braindump: (text: string) =>
@@ -170,6 +173,11 @@ export const api = {
   roomHistory: (session_id: string) => req<RoomMessage[]>(`/api/room/history/${session_id}`),
   streak: () => req<StreakStats>("/api/streak"),
   access: () => req<AccessSnapshot>("/api/me/access"),
+  logEvent: (type: string, data?: Record<string, any>) =>
+    req<{ ok: boolean }>("/api/events", {
+      method: "POST",
+      body: JSON.stringify({ type, task_id: data?.task_id ?? null, data }),
+    }).catch(() => ({ ok: false })),
 
   // Auth
   exchangeSession: (session_token: string, device_id?: string) =>

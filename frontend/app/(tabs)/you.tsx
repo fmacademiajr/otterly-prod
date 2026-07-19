@@ -38,6 +38,7 @@ export default function YouScreen() {
   const [access, setAccess] = useState<AccessSnapshot | null>(null);
   const [name, setName] = useState("");
   const [reminder, setReminder] = useState("20:00");
+  const [shareData, setShareData] = useState(false);
   const [loadedFromStorage, setLoadedFromStorage] = useState(false);
   const [voucherOpen, setVoucherOpen] = useState(false);
   const [voucherCode, setVoucherCode] = useState("");
@@ -61,6 +62,8 @@ export default function YouScreen() {
     if (n) setName(n);
     const r = await storage.getItem<string>("otterly.reminderTime", "20:00");
     if (r) setReminder(r);
+    const c = await storage.getItem<boolean>("otterly.consent", false);
+    setShareData(c ?? false);
     setLoadedFromStorage(true);
   }, []);
 
@@ -72,6 +75,9 @@ export default function YouScreen() {
   useEffect(() => {
     if (loadedFromStorage) storage.setItem("otterly.reminderTime", reminder);
   }, [reminder, loadedFromStorage]);
+  useEffect(() => {
+    if (loadedFromStorage) storage.setItem("otterly.consent", shareData);
+  }, [shareData, loadedFromStorage]);
 
   const handleDeleteAccount = useCallback(async () => {
     const message =
@@ -315,6 +321,24 @@ export default function YouScreen() {
                 testID="settings-dark"
                 value={isDark}
                 onValueChange={(v) => setMode(v ? "dark" : "light")}
+                trackColor={{ true: colors.primary, false: colors.border }}
+                thumbColor="#FFFFFF"
+              />
+            </View>
+            <View style={[styles.divider, { backgroundColor: colors.border }]} />
+            <View style={styles.row}>
+              <View style={{ flex: 1, marginRight: spacing.base }}>
+                <Text style={[styles.rowLabel, { color: colors.text, fontFamily: fonts.bodySemibold }]}>
+                  Help improve Otterly
+                </Text>
+                <Text style={{ color: colors.textMuted, fontFamily: fonts.body, fontSize: 13, marginTop: 2 }}>
+                  Share your tasks, anonymized, so the steps get better. Off by default. Change anytime.
+                </Text>
+              </View>
+              <Switch
+                testID="settings-share-data"
+                value={shareData}
+                onValueChange={setShareData}
                 trackColor={{ true: colors.primary, false: colors.border }}
                 thumbColor="#FFFFFF"
               />

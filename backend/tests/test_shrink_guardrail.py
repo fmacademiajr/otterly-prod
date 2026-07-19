@@ -50,7 +50,9 @@ def check_invariants() -> list:
     for t in ["Mail the check", "Water the plants", "Start the dishwasher",
               "Vacuum the rug", "Chop the onions", "Iron the shirt", "Mop the floor",
               "Type the finally block", "Open the Just Eat app"]:
-        if _validate_steps([{"text": t, "minutes": 5}], "easy")[1]:
+        # first_is_activation=False: these check verb/grammar acceptance as mid-list
+        # steps, not the 2-min activation ceiling (which a single 5-min step would trip).
+        if _validate_steps([{"text": t, "minutes": 5}], "easy", first_is_activation=False)[1]:
             fails.append(f"false reject on a real physical step: {t!r}")
 
     return fails

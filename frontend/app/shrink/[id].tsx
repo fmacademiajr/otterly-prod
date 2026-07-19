@@ -18,19 +18,17 @@ import { FadeUp } from "@/src/components/animations";
 import { api, ApiError, type Step, type Task } from "@/src/lib/api";
 import { useTheme } from "@/src/theme/ThemeProvider";
 import { fonts, radii, spacing } from "@/src/theme/tokens";
+import { storage } from "@/src/utils/storage";
 
 type Difficulty = "easy" | "medium" | "hard";
-
-// ponytail: one rung down, and "easy" is the floor. A second tap has nowhere to go,
-// which is the Binary Choice Rule, not a maximizer's "keep searching" affordance.
-const SMALLER: Record<Difficulty, Difficulty | null> = { hard: "medium", medium: "easy", easy: null };
 
 type BannerKind = "" | "upsell" | "confirm" | "retry" | "safety";
 
 export default function ShrinkScreen() {
   const { colors } = useTheme();
   const router = useRouter();
-  const { id, focusStep } = useLocalSearchParams<{ id: string; focusStep?: string }>();
+  const { id, focusStep, energy } = useLocalSearchParams<{ id: string; focusStep?: string; energy?: string }>();
+  const energyPref = energy === "low" || energy === "good" ? energy : "medium";
   const [task, setTask] = useState<Task | null>(null);
   const [steps, setSteps] = useState<Step[]>([]);
   const [difficulty, setDifficulty] = useState<Difficulty>("medium");
@@ -38,11 +36,14 @@ export default function ShrinkScreen() {
   const [shrinking, setShrinking] = useState(false);
   const [error, setError] = useState<string>("");
   const [banner, setBanner] = useState<BannerKind>("");
-  // Carries tooBig too: confirming a 409 must re-send the SAME request plus force,
-  // otherwise "Still too big" -> confirm silently re-shrinks without the hint.
-  const [pending, setPending] = useState<{ d: Difficulty; deep: boolean; tooBig: boolean } | null>(null);
+  // Confirming a 409 must re-send the SAME request plus force, otherwise
+  // "Still too big" -> confirm silently re-shrinks without the hint.
+  const [pending, setPending] = useState<{ d: Difficulty; deep: boolean } | null>(null);
   const [showAll, setShowAll] = useState(false);
-  const [tooBigUsed, setTooBigUsed] = useState(false);
+  const [resplitIds, setResplitIds] = useState<Set<string>>(new Set());
+  const shownAt = useRef<number | null>(null);
+  const shownLogged = useRef(false);
+  const firstDoneLogged = useRef(false);
 
   // Timer state
   const [activeStep, setActiveStep] = useState<string | null>(null);
@@ -62,7 +63,7 @@ export default function ShrinkScreen() {
       if (s.length === 0) {
         setShrinking(true);
         try {
-          const shrunk = await api.shrinkTask(id, t?.difficulty || "medium");
+          const shrunk = await api.shrinkTask(id, t?.difficulty || "medium", false, { energy: energyPref });
           setSteps(shrunk);
         } catch (e: any) {
           // ponytail: was 429-only, so every other failure left an empty screen with no reason.
@@ -82,7 +83,7 @@ export default function ShrinkScreen() {
     } finally {
       setLoading(false);
     }
-  }, [id]);
+  }, [id, energyPref]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -106,23 +107,44 @@ export default function ShrinkScreen() {
 
   useEffect(() => () => { if (timerRef.current) clearInterval(timerRef.current); }, []);
 
+  // Fires once, when the plan first has steps. Text (task title, step wording)
+  // only goes along if the person opted into it — everything else is shape, not content.
+  useEffect(() => {
+    if (shownLogged.current || steps.length === 0) return;
+    shownLogged.current = true;
+    shownAt.current = Date.now();
+    (async () => {
+      const payload: Record<string, any> = {
+        task_id: id,
+        energy: energyPref,
+        count: steps.length,
+        minutes: steps.map((s) => s.minutes),
+      };
+      const consent = await storage.getItem<boolean>("otterly.consent", false);
+      if (consent) {
+        payload.task_title = task?.title;
+        payload.texts = steps.map((s) => s.text);
+      }
+      api.logEvent("plan_shown", payload);
+    })();
+  }, [steps]);
+
   const doShrink = async (
     d: Difficulty,
     deep = false,
-    opts: { force?: boolean; tooBig?: boolean } = {}
+    opts: { force?: boolean } = {}
   ) => {
     if (!id) return;
     setError("");
     setBanner("");
     setShrinking(true);
     try {
-      const shrunk = await api.shrinkTask(id, d, deep, opts);
+      const shrunk = await api.shrinkTask(id, d, deep, { ...opts, energy: energyPref });
       setSteps(shrunk);
       // Only on success. A failed "Still too big" must not strand difficulty at a
       // rung the backend never applied, which would hide the button on the retry.
       setDifficulty(d);
       setShowAll(false);
-      if (opts.tooBig) setTooBigUsed(true);
     } catch (e: any) {
       if (e instanceof ApiError) {
         if (e.status === 429 || e.status === 402) {
@@ -131,7 +153,7 @@ export default function ShrinkScreen() {
         } else if (e.status === 409) {
           // ponytail: the banner is already a tappable action surface. No Modal needed.
           setBanner("confirm");
-          setPending({ d, deep, tooBig: opts.tooBig ?? false });
+          setPending({ d, deep });
           setError(`${e.detail}. Re-shrink anyway?`);
         } else if (e.status === 422) {
           setBanner("safety");
@@ -146,13 +168,36 @@ export default function ShrinkScreen() {
   };
   const deepShrink = () => doShrink(difficulty, true);
 
-  const smaller = SMALLER[difficulty];
-  const stillTooBig = () => smaller && doShrink(smaller, false, { tooBig: true });
+  const logEvent = (type: string, data?: Record<string, any>) => {
+    api.logEvent(type, data);
+  };
+
+  const stillTooBig = async () => {
+    const step = steps.find((s) => !s.done);
+    if (!step || !id) return;
+    setError(""); setBanner(""); setShrinking(true);
+    try {
+      const updated = await api.resplitStep(step.id);
+      if (activeStep === step.id) stopTimer();   // the timed step no longer exists
+      setSteps(updated);
+      setResplitIds((prev) => new Set(prev).add(step.id));
+      logEvent("resplit", { task_id: id, step_index: steps.findIndex((s) => s.id === step.id) });
+    } catch (e: any) {
+      if (e instanceof ApiError && (e.status === 429 || e.status === 402)) {
+        setBanner("upsell"); setError(e.detail);
+      } else {
+        setBanner("retry");
+        setError("Otterly could not shrink this one. Nothing is lost.");
+      }
+    }
+    setShrinking(false);
+  };
 
   // Next-Action Method: only the immediate next physical action is a demand.
   // Finished steps stay visible, they are evidence of competence, not a demand.
   // This is a disclosure and not a deletion, so the externalized list survives.
   const firstUndone = steps.findIndex((s) => !s.done);
+  const firstUndoneStep = steps.find((s) => !s.done);
   const visibleSteps =
     showAll || firstUndone === -1
       ? steps
@@ -163,16 +208,27 @@ export default function ShrinkScreen() {
     if (banner === "upsell") return router.push("/paywall");
     if (banner === "safety") return router.push("/(tabs)/room");
     if (banner === "confirm" && pending)
-      return doShrink(pending.d, pending.deep, { force: true, tooBig: pending.tooBig });
+      return doShrink(pending.d, pending.deep, { force: true });
     return doShrink(difficulty);
   };
 
   const toggle = async (step: Step) => {
-    if (!step.done) Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+    const becomingDone = !step.done;
+    if (becomingDone) Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
     setSteps((prev) => prev.map((s) => (s.id === step.id ? { ...s, done: !s.done } : s)));
+    if (becomingDone) {
+      const isFirst = !firstDoneLogged.current;
+      firstDoneLogged.current = true;
+      logEvent("step_done", {
+        task_id: id,
+        step_index: steps.findIndex((s) => s.id === step.id),
+        elapsed_ms: shownAt.current ? Date.now() - shownAt.current : null,
+        first: isFirst,
+      });
+    }
     try {
       await api.toggleStep(step.id, !step.done);
-      if (!step.done) Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+      if (becomingDone) Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
     } catch {
       setSteps((prev) => prev.map((s) => (s.id === step.id ? { ...s, done: step.done } : s)));
     }
@@ -390,7 +446,7 @@ export default function ShrinkScreen() {
                       fontSize: 13,
                       marginLeft: 4,
                     }}>
-                      {step.minutes} min
+                      ~{step.minutes} min
                     </Text>
                   </TouchableOpacity>
                 </View>
@@ -411,8 +467,8 @@ export default function ShrinkScreen() {
           </TouchableOpacity>
         ) : null}
 
-        {/* One rung down, once. At "easy" the button is gone, so there is nothing to maximize. */}
-        {steps.length > 0 && !tooBigUsed && smaller && !shrinking ? (
+        {/* Once per step, not once per session — resplitting step 2 shouldn't burn the offer for step 3. */}
+        {steps.length > 0 && firstUndoneStep && !resplitIds.has(firstUndoneStep.id) && !shrinking ? (
           <TouchableOpacity
             testID="still-too-big"
             onPress={stillTooBig}
