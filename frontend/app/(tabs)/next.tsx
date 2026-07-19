@@ -92,7 +92,7 @@ export default function NextScreen() {
     if (!data?.step) return;
     router.push({
       pathname: "/shrink/[id]",
-      params: { id: data.step.task_id, focusStep: data.step.id },
+      params: { id: data.step.task_id, focusStep: data.step.id, energy },
     });
   };
 
@@ -204,7 +204,7 @@ export default function NextScreen() {
               </Text>
               <View style={[styles.minutesPill, { backgroundColor: colors.primary }]}>
                 <Text style={[styles.minutesText, { color: colors.onPrimary, fontFamily: fonts.numeric }]}>
-                  {data.step.minutes} min
+                  ~{data.step.minutes} min
                 </Text>
               </View>
               {data.task?.title ? (

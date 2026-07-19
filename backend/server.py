@@ -113,9 +113,10 @@ class Step(BaseModel):
 
 class ShrinkRequest(BaseModel):
     difficulty: Difficulty = "medium"
+    energy: Energy = "medium"  # how much activation cost step 1 can carry, distinct from difficulty
     deep: bool = False  # premium: use Opus-4-8 for a deeper shrink
     force: bool = False  # re-shrink even though finished steps will be destroyed
-    too_big: bool = False  # the last steps were too big, ask for smaller first actions
+    too_big: bool = False  # deprecated: superseded by /steps/{id}/resplit, kept for shipped-client compat
 
 
 class NextRequest(BaseModel):
@@ -156,6 +157,12 @@ class RoomMessageDoc(BaseModel):
     role: Literal["user", "otter"]
     text: str
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
+
+class EventRequest(BaseModel):
+    type: str = Field(max_length=40)          # "plan_shown" | "step_started" | "abandoned" | "resplit" | "helped" | ...
+    task_id: Optional[str] = None
+    data: Optional[dict] = None               # small payload: energy, plan, elapsed_ms, step_index, etc.
 
 
 class StreakStats(BaseModel):
@@ -316,7 +323,7 @@ _anthropic = AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
 async def _llm_text(system: str, messages: list, deep: bool = False) -> str:
     """One Anthropic call. `messages` is the anthropic messages array (roles + content).
     Same model tiers the retrained persona was tuned on: opus for Deep Shrink, sonnet otherwise."""
-    model = "claude-opus-4-8" if deep else "claude-sonnet-4-6"
+    model = "claude-opus-4-8" if deep else "claude-sonnet-5"
     resp = await _anthropic.messages.create(
         model=model, max_tokens=4096, system=system, messages=messages,
     )
@@ -614,7 +621,7 @@ async def auth_logout(authorization: Optional[str] = Header(default=None)):
     return {"ok": True}
 
 
-OWNER_COLLECTIONS = ("tasks", "steps", "activity", "room_messages", "rate_counters")
+OWNER_COLLECTIONS = ("tasks", "steps", "activity", "room_messages", "rate_counters", "events")
 USER_ID_COLLECTIONS = ("entitlements", "user_sessions")   # `users` deleted last, separately
 # webhook_events: keyed on event_id only. No person key, unreachable per-user.
 #   Holds event_id + a timestamp (:465-468) — the RC payload is never stored.
@@ -930,7 +937,7 @@ STEP_UNSAFE_RE = re.compile(
 )
 
 # ponytail: minute ceilings are a product guess, not a research finding. Tune on completion data.
-MAX_MINUTES = {"activation": 5, "easy": 5, "medium": 10, "hard": 25}
+MAX_MINUTES = {"activation": 2, "easy": 5, "medium": 10, "hard": 25}
 LADDER = [1, 2, 5, 10, 25]
 
 
@@ -946,7 +953,7 @@ def _norm(t: str) -> str:
     return re.sub(r"[^a-z0-9 ]", "", t.lower()).strip()
 
 
-def _validate_steps(raw_steps: list, difficulty: str) -> Tuple[List[dict], List[str]]:
+def _validate_steps(raw_steps: list, difficulty: str, first_is_activation: bool = True) -> Tuple[List[dict], List[str]]:
     """Returns (clean, problems). Never raises. Caller inserts clean only.
     Enforces grammar, shape and honest labels. Does NOT enforce scope."""
     clean: List[dict] = []
@@ -958,7 +965,7 @@ def _validate_steps(raw_steps: list, difficulty: str) -> Tuple[List[dict], List[
             continue
         n = _norm(text)
         first = n.split(" ")[0] if n else ""
-        bucket = "activation" if i == 0 else difficulty  # keyed on i, NOT len(clean)
+        bucket = "activation" if (i == 0 and first_is_activation) else difficulty  # keyed on i, NOT len(clean)
         want = int(s.get("minutes") or 10)
 
         if STEP_UNSAFE_RE.search(text):
@@ -986,20 +993,27 @@ def _validate_steps(raw_steps: list, difficulty: str) -> Tuple[List[dict], List[
     return clean, problems
 
 
+# ponytail: low-energy's 3-step / 5-min caps below are prompt-enforced only, not in
+# _validate_steps. Tighten in the validator if completion data shows the model drifting.
 SHRINK_SYSTEM = """You are Otterly, a calm ADHD-friendly companion. You help people with ADHD start tasks by breaking them into tiny concrete micro-steps.
 
 Rules:
 - Return STRICT JSON only. No prose, no fenced code.
 - 2 to 6 micro-steps. Fewer is better if the task allows. Never pad a small task.
-- Step 1 is the activation step: one physical movement or app-open, under 5 minutes, requiring zero decisions. It exists to get the body moving, not to make progress.
+- Step 1 is the activation step: one physical movement or app-open, under 2 minutes, requiring zero decisions and zero information retrieval. No searching, finding, looking up, or choosing. "Open last month's invoice" fails: it is zero decisions, but it needs a search, and the freeze re-forms during the search. "Open the invoices folder" passes. Step 1 exists to get the body moving, not to make progress.
 - Every other step is a single concrete physical action.
 - Steps start with a physical verb ("Open", "Walk to", "Type", "Send"). Never "The", "Your", "It".
 - One action per step. Never two joined by "and", "then", or a comma chain. Keep each step under 10 words.
 - Never generic ("plan it out", "figure out the intro", "sort out the receipts"). Always concrete ("Open Gmail").
 - Never a duplicate of another step.
 - Give each step an HONEST minute estimate. Do not shrink the number to fit a limit. If the work is 25 minutes, say 25 and make the step smaller instead.
+- If you are unsure between two estimates, give the larger one. A step finished under its estimate feels like a win. A step that overruns feels like failure.
 - Tone: warm, brief, no shame. Never mention how the user 'should' have done this earlier. Never open a step with "Just", "Simply", or "Finally".
 - Step size for steps 2 and up: "easy" = under 5 min each. "medium" = under 10 min. "hard" = under 25 min. This never applies to step 1.
+- Difficulty sizes steps 2 and up. Energy is a different knob: it sets how much activation cost step 1 can carry, and how much of the task this plan should attempt.
+- If energy is "low": step 1 takes under 2 minutes, uses the body only, and retrieves zero information. Return at most 3 steps. Every step is 5 minutes or less, whatever the difficulty says. Cover only the first slice of the task, and make the final step a stopping action that marks the slice complete ("Close the doc"). The rest of the task can be shrunk later.
+- If energy is "medium": follow the rules above exactly as written.
+- If energy is "good": you may return fewer, larger steps, each up to the difficulty ceiling. Spend the saved budget on ordering: put the step that unblocks the rest first, after the activation step.
 - Safety: never produce steps for self-harm, altering or stopping prescribed medication, disordered eating, or harming anyone. If the task is one of these, return {"steps": []} and nothing else. Routine health admin (taking or refilling medication, booking a doctor, gentle exercise) is fine.
 
 Return JSON shape:
@@ -1045,6 +1059,7 @@ async def shrink_task(task_id: str, payload: ShrinkRequest, who=Depends(resolve_
     if task.note:
         prompt += f"Note: {task.note}\n"
     prompt += f"Difficulty preference: {payload.difficulty}\n"
+    prompt += f"Energy: {payload.energy}\n"
     if payload.too_big:
         # The clamp changes the number. Only the prompt changes the work.
         prompt += "The last steps were too big for this person. Return smaller first actions, not smaller estimates.\n"
@@ -1117,6 +1132,100 @@ async def toggle_step(step_id: str, payload: StepPatch, who=Depends(resolve_owne
     await db.steps.update_one({"id": step_id, "owner": owner_id}, {"$set": update})
     doc = await db.steps.find_one({"id": step_id, "owner": owner_id}, {"_id": 0, "owner": 0})
     return Step(**doc)
+
+
+# RESPLIT_SYSTEM deliberately duplicates SHRINK_SYSTEM's style rules rather than sharing
+# a fragment: a resplit replaces exactly one step, never re-plans the task, and that
+# framing difference would leak into a shared prompt. Keep them separate.
+RESPLIT_SYSTEM = """You are Otterly, a calm ADHD-friendly companion. The user froze on ONE step of an existing plan. Replace exactly that step with 2 to 3 smaller steps that together do the same work, nothing more.
+
+Rules:
+- Return STRICT JSON only. No prose, no fenced code.
+- 2 to 3 replacement steps. Together they cover only the original step's work. Never re-plan the rest of the task.
+- Each replacement is a single concrete physical action, smaller than the original step.
+- Steps start with a physical verb ("Open", "Walk to", "Type"). Never "The", "Your", "It".
+- One action per step. Keep each step under 10 words. Never a duplicate.
+- Give each step an HONEST minute estimate. If unsure between two estimates, give the larger one. Do not shrink the number to fit a limit; make the step smaller instead.
+- Tone: warm, brief, no shame. Never open a step with "Just", "Simply", or "Finally".
+- Safety: never produce steps for self-harm, altering or stopping prescribed medication, disordered eating, or harming anyone. If asked to, return {"steps": []}.
+
+Return JSON shape:
+{"steps": [{"text": "Open the doc", "minutes": 2}]}
+"""
+
+
+@api.post("/steps/{step_id}/resplit", response_model=List[Step])
+async def resplit_step(step_id: str, who=Depends(resolve_owner)):
+    owner_id, user_id = who
+    ent = await get_entitlement(owner_id, user_id)
+    # A resplit is a full LLM call; it shares the free-tier "shrink" bucket (no new counter, no premium gate).
+    if not ent["active"]:
+        allowed, _ = await check_rate(owner_id, "shrink", FREE_LIMITS["shrinks"])
+        if not allowed:
+            raise HTTPException(429, f"free tier: {FREE_LIMITS['shrinks']} shrinks/day. try again tomorrow or upgrade to Otter Premium.")
+
+    target = await db.steps.find_one({"id": step_id, "owner": owner_id}, {"_id": 0})
+    if not target:
+        raise HTTPException(404, "step not found")
+    if target.get("done"):
+        raise HTTPException(409, "this step is already finished")
+    task_doc = await db.tasks.find_one({"id": target["task_id"], "owner": owner_id}, {"_id": 0})
+    if not task_doc:
+        raise HTTPException(404, "task not found")
+    task_id = target["task_id"]
+
+    down_rung = {"hard": "medium", "medium": "easy", "easy": "easy"}[task_doc.get("difficulty") or "medium"]
+    siblings = await db.steps.find({"task_id": task_id, "owner": owner_id}, {"_id": 0}).sort("order", 1).to_list(50)
+
+    lines = []
+    for s in siblings:
+        prefix = "[done] " if s.get("done") else ""
+        marker = "   <- REPLACE THIS ONE" if s["id"] == step_id else ""
+        lines.append(f'{s["order"]+1}. {prefix}{s["text"]} ({s["minutes"]} min){marker}')
+    prompt = f"Task: {task_doc['title']}\n"
+    if task_doc.get("note"):
+        prompt += f"Note: {task_doc['note']}\n"
+    prompt += "The current plan:\n" + "\n".join(lines) + "\n\n"
+    prompt += (f'Replace step {target["order"]+1}: "{target["text"]}" ({target["minutes"]} min). '
+               f"The user froze on it. Return 2 to 3 smaller replacement steps, each {MAX_MINUTES[down_rung]} minutes or less.\n")
+    if target["order"] == 0:
+        prompt += "The first replacement must be an activation step: under 2 minutes, body-only, zero decisions, zero information retrieval.\n"
+    prompt += "\nReturn JSON."
+
+    data = await _llm_json(f"resplit-{step_id}-{uuid.uuid4()}", RESPLIT_SYSTEM, prompt)
+    clean, problems = _validate_steps((data.get("steps") or [])[:3], down_rung, first_is_activation=(target["order"] == 0))
+    if problems:
+        try:
+            data = await _llm_json(
+                f"resplit-{step_id}-{uuid.uuid4()}", RESPLIT_SYSTEM,
+                prompt + "\n\nYour last answer had problems:\n- " + "\n- ".join(problems) + "\nReturn corrected JSON.",
+            )
+            repaired, _ = _validate_steps((data.get("steps") or [])[:3], down_rung, first_is_activation=(target["order"] == 0))
+            if len(repaired) >= len(clean):
+                clean = repaired
+        except Exception as e:
+            logger.warning("resplit repair failed, keeping %d survivors: %s", len(clean), e)
+    if not clean:
+        raise HTTPException(502, "AI returned no usable steps")
+
+    # Splice in place. No delete_many; done steps are never touched (target is guaranteed undone).
+    n = len(clean)
+    if n > 1:
+        await db.steps.update_many(
+            {"task_id": task_id, "owner": owner_id, "order": {"$gt": target["order"]}},
+            {"$inc": {"order": n - 1}},
+        )
+    await db.steps.delete_one({"id": step_id, "owner": owner_id})
+    new_steps = [Step(task_id=task_id, order=target["order"] + i, **c) for i, c in enumerate(clean)]
+    await db.steps.insert_many([{**s.dict(), "owner": owner_id} for s in new_steps])
+
+    if not ent["active"]:
+        await bump_rate(owner_id, "shrink")
+
+    # ponytail: cross-step duplicate replacements are not checked here — _validate_steps
+    # dedupes within this batch only, not against the other steps still in the plan.
+    docs = await db.steps.find({"task_id": task_id, "owner": owner_id}, {"_id": 0, "owner": 0}).sort("order", 1).to_list(50)
+    return [Step(**d) for d in docs]
 
 
 # ---------- Next ----------
@@ -1341,6 +1450,23 @@ async def room_history(session_id: str, who=Depends(resolve_owner)):
     return [RoomMessageDoc(**d) for d in docs]
 
 
+# ---------- Events ----------
+
+@api.post("/events")
+async def log_event(payload: EventRequest, who=Depends(resolve_owner)):
+    owner_id, _ = who
+    await db.events.insert_one({
+        "id": str(uuid.uuid4()),
+        "owner": owner_id,
+        "type": payload.type,
+        "task_id": payload.task_id,
+        "data": payload.data or {},
+        "at": datetime.now(timezone.utc).isoformat(),
+        "date": datetime.now(timezone.utc).date().isoformat(),
+    })
+    return {"ok": True}
+
+
 # ---------- Streak ----------
 
 @api.get("/streak", response_model=StreakStats)
@@ -1400,6 +1526,7 @@ INDEX_SPECS = [
     ("room_messages", [("owner", 1), ("session_id", 1), ("created_at", 1)], dict()),
     ("vouchers", "code", dict(unique=True)),
     ("vouchers", "redeemed_by", dict()),
+    ("events", [("owner", 1), ("date", 1)], dict()),
 ]
 
 
