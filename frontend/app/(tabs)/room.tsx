@@ -157,6 +157,11 @@ export default function RoomScreen() {
           >
             I&apos;m here.
           </Text>
+          {messages.length <= 1 ? (
+            <Text style={[styles.roomIntro, { color: colors.textMuted, fontFamily: fonts.body }]}>
+              A quiet place to work alongside me. Say what you&apos;re doing, or just start. I won&apos;t quiz you.
+            </Text>
+          ) : null}
         </View>
 
         <WaveDivider />
@@ -240,6 +245,14 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
   title: { fontSize: 32, lineHeight: 40, marginTop: 0 },
+  roomIntro: {
+    fontSize: 13,
+    lineHeight: 19,
+    textAlign: "center",
+    marginTop: 4,
+    paddingHorizontal: spacing.lg,
+    maxWidth: 300,
+  },
   list: { padding: spacing.lg, gap: spacing.md, paddingBottom: spacing.xxl },
   bubble: {
     maxWidth: "82%",
