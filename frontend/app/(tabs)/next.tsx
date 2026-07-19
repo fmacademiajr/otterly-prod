@@ -130,7 +130,18 @@ export default function NextScreen() {
 
         <View style={{ height: spacing.md }} />
 
+        <Text style={[styles.energyLabel, { color: colors.textMuted, fontFamily: fonts.body }]}>
+          How&apos;s your energy right now?
+        </Text>
+        <View style={{ height: spacing.sm }} />
         <EnergyPill value={energy} onChange={onEnergy} />
+        <Text style={[styles.energyHint, { color: colors.textSubtle, fontFamily: fonts.body }]}>
+          {energy === "low"
+            ? "I'll keep your next step tiny."
+            : energy === "good"
+            ? "I'll give you a little more."
+            : "I'll pick a small step."}
+        </Text>
 
         <View style={{ height: spacing.lg }} />
 
@@ -297,6 +308,8 @@ const styles = StyleSheet.create({
   // calls this screen "80% of the emotional experience" and names the micro-step
   // the Big Fraunces line. It is now the biggest thing on the screen.
   hello: { fontSize: 26, lineHeight: 32, letterSpacing: -0.5 },
+  energyLabel: { fontSize: 14 },
+  energyHint: { fontSize: 13, marginTop: spacing.sm },
   card: {
     borderWidth: 1,
     borderRadius: 20,
