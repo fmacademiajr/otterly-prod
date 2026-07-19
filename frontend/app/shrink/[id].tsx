@@ -25,7 +25,7 @@ type Difficulty = "easy" | "medium" | "hard";
 // which is the Binary Choice Rule, not a maximizer's "keep searching" affordance.
 const SMALLER: Record<Difficulty, Difficulty | null> = { hard: "medium", medium: "easy", easy: null };
 
-type BannerKind = "" | "upsell" | "confirm" | "retry";
+type BannerKind = "" | "upsell" | "confirm" | "retry" | "safety";
 
 export default function ShrinkScreen() {
   const { colors } = useTheme();
@@ -68,6 +68,9 @@ export default function ShrinkScreen() {
           // ponytail: was 429-only, so every other failure left an empty screen with no reason.
           if (e instanceof ApiError && (e.status === 429 || e.status === 402)) {
             setBanner("upsell");
+            setError(e.detail);
+          } else if (e instanceof ApiError && e.status === 422) {
+            setBanner("safety");
             setError(e.detail);
           } else {
             setBanner("retry");
@@ -130,6 +133,9 @@ export default function ShrinkScreen() {
           setBanner("confirm");
           setPending({ d, deep, tooBig: opts.tooBig ?? false });
           setError(`${e.detail}. Re-shrink anyway?`);
+        } else if (e.status === 422) {
+          setBanner("safety");
+          setError(e.detail);
         } else {
           setBanner("retry");
           setError("Otterly could not shrink this one. Nothing is lost.");
@@ -155,6 +161,7 @@ export default function ShrinkScreen() {
 
   const onBannerPress = () => {
     if (banner === "upsell") return router.push("/paywall");
+    if (banner === "safety") return router.push("/(tabs)/room");
     if (banner === "confirm" && pending)
       return doShrink(pending.d, pending.deep, { force: true, tooBig: pending.tooBig });
     return doShrink(difficulty);
@@ -307,7 +314,7 @@ export default function ShrinkScreen() {
               {error}
             </Text>
             <Text style={{ color: colors.primary, fontFamily: fonts.bodySemibold, fontSize: 13, marginTop: 6 }}>
-              {banner === "upsell" ? "See Otter Premium →" : banner === "confirm" ? "Re-shrink anyway" : "Try again"}
+              {banner === "upsell" ? "See Otter Premium →" : banner === "confirm" ? "Re-shrink anyway" : banner === "safety" ? "Sit with me in the Room" : "Try again"}
             </Text>
           </TouchableOpacity>
         ) : null}
