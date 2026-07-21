@@ -20,6 +20,7 @@ import { ScreenHeader } from "@/src/components/ScreenHeader";
 import { StreakStrip } from "@/src/components/StreakStrip";
 import { OtterMascot } from "@/src/components/OtterMascot";
 import { api, ApiError, type StreakStats, type AccessSnapshot } from "@/src/lib/api";
+import { PRIVACY_URL, TERMS_URL } from "@/src/lib/legal";
 import { useTheme } from "@/src/theme/ThemeProvider";
 import { fonts, radii, spacing } from "@/src/theme/tokens";
 import { storage } from "@/src/utils/storage";
@@ -28,7 +29,6 @@ import { useAuth } from "@/src/auth/AuthProvider";
 // Lives on the marketing site, which is already the app's public face. Apple 5.1.1
 // requires an in-app link to it for any app that collects data, and Otterly collects
 // email, voice, and mental-health-adjacent free text.
-const PRIVACY_URL = "https://getotterly.com/privacy";
 
 export default function YouScreen() {
   const { colors, isDark, mode, setMode } = useTheme();
@@ -441,6 +441,20 @@ export default function YouScreen() {
             >
               <Text style={[styles.rowLabel, { color: colors.text, fontFamily: fonts.body }]}>
                 Privacy policy
+              </Text>
+              <ChevronRight size={18} color={colors.textSubtle} strokeWidth={1.4} />
+            </TouchableOpacity>
+
+            {/* Apple 3.1.2 wants terms reachable alongside a subscription, not
+                only on the paywall a buyer may never open again. */}
+            <View style={[styles.divider, { backgroundColor: colors.border }]} />
+            <TouchableOpacity
+              testID="terms-of-use"
+              style={styles.row}
+              onPress={() => Linking.openURL(TERMS_URL)}
+            >
+              <Text style={[styles.rowLabel, { color: colors.text, fontFamily: fonts.body }]}>
+                Terms of use
               </Text>
               <ChevronRight size={18} color={colors.textSubtle} strokeWidth={1.4} />
             </TouchableOpacity>

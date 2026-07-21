@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import {
+  Linking,
   ScrollView,
   StyleSheet,
   Text,
@@ -17,6 +18,7 @@ import { fonts, radii, spacing } from "@/src/theme/tokens";
 import { useAuth } from "@/src/auth/AuthProvider";
 import { revenuecat } from "@/src/lib/revenuecat";
 import { api, type AccessSnapshot } from "@/src/lib/api";
+import { PRIVACY_URL, TERMS_URL } from "@/src/lib/legal";
 
 // ponytail: the yearly tier is gone. It was $29.99/year against a $29 lifetime,
 // so buying it was never rational, and a dominated third option is exactly the
@@ -259,6 +261,25 @@ export default function PaywallScreen() {
         <Text style={[styles.legal, { color: colors.textSubtle, fontFamily: fonts.body }]}>
           Payment is processed by Apple. Subscriptions auto-renew unless canceled 24h before the period ends. Manage in Settings › Apple ID › Subscriptions.
         </Text>
+
+        {/* Apple 3.1.2 requires functional Terms and Privacy links wherever an
+            auto-renewable subscription is sold. They have to be on the paywall
+            itself, not only buried in settings. */}
+        <View style={styles.legalLinks}>
+          <TouchableOpacity testID="paywall-terms" onPress={() => Linking.openURL(TERMS_URL)}>
+            <Text style={[styles.legalLink, { color: colors.textSubtle, fontFamily: fonts.body }]}>
+              Terms of Use
+            </Text>
+          </TouchableOpacity>
+          <Text style={[styles.legalSep, { color: colors.textSubtle, fontFamily: fonts.body }]}>
+            {"  ·  "}
+          </Text>
+          <TouchableOpacity testID="paywall-privacy" onPress={() => Linking.openURL(PRIVACY_URL)}>
+            <Text style={[styles.legalLink, { color: colors.textSubtle, fontFamily: fonts.body }]}>
+              Privacy Policy
+            </Text>
+          </TouchableOpacity>
+        </View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -342,6 +363,22 @@ const styles = StyleSheet.create({
     fontSize: 11,
     textAlign: "center",
     marginTop: spacing.lg,
+    lineHeight: 16,
+  },
+  legalLinks: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: spacing.sm,
+    marginBottom: spacing.lg,
+  },
+  legalLink: {
+    fontSize: 11,
+    lineHeight: 16,
+    textDecorationLine: "underline",
+  },
+  legalSep: {
+    fontSize: 11,
     lineHeight: 16,
   },
 });
