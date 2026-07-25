@@ -2,10 +2,11 @@
 
 ## 1. Brand Philosophy
 
-Otterly is an ADHD-friendly task companion. Warm, non-punitive, quiet. The otter is a
-line-drawing motif, not a cartoon character. No face features (eyes, nose, smile,
-whiskers) on the canonical otter mark. The filled PNG otter variants used in-app have
-gentle face details but the primary brand mark is the clean line drawing.
+Otterly is an ADHD-friendly task companion. Warm, non-punitive, quiet. The brand
+otter is a soft filled-illustration cartoon otter with warm brown fur, cream
+belly, and a signature gold scarf. Small dot eyes, subtle smile. The otter is
+the hero of the brand, not a secondary mark. A secondary single-line floating
+otter exists as a decorative motif but is not the primary brand identifier.
 
 ## 2. Color Palette
 
@@ -95,8 +96,8 @@ gentle face details but the primary brand mark is the clean line drawing.
 | Body semibold | General Sans | Semibold | GeneralSans_Semibold |
 | Numeric | DM Sans | Medium (500) | DMSans_500Medium |
 
-Usage pattern: Fraunces for headlines and display text (serif, warm). General Sans
-for body and UI (clean sans-serif). DM Sans for numbers and metrics (geometric sans).
+Usage: Fraunces for headlines (serif, warm). General Sans for body and UI
+(clean sans). DM Sans for numbers (geometric sans).
 
 ## 4. Spacing
 
@@ -121,157 +122,163 @@ for body and UI (clean sans-serif). DM Sans for numbers and metrics (geometric s
 | xl | 20 |
 | pill | 9999 |
 
-## 6. Ottery Motif — Line Drawings (Primary Brand Marks)
+## 6. Otter Mascot — Primary Brand Asset (Filled Illustration)
 
-These are the canonical brand marks. Clean, single-line style. No face features on
-the primary marks (OtterGlyph and LineOtter have minimal dot eyes and tiny smile but
-the general rule is restraint). WaterWave and StreakRipple are supporting motifs.
+The brand otter is a soft filled-illustration cartoon otter. This is the primary
+visual identifier for Otterly. It appears in 16 PNG poses in the app.
+
+### Colors of the Otter
+
+| Part | Color | Hex |
+|---|---|---|
+| Body / head fur | Warm brown | #8A6A4A |
+| Ears (outer) | Dark brown | #5E4530 |
+| Ears (inner) | Warm brown | #8A6A4A |
+| Belly / muzzle | Cream | #E8D8BE |
+| Scarf | Gold | #D4A24F |
+| Scarf stripe / stroke | Darker gold | #B58A3F |
+| Eyes / nose | Dark brown | #3B2E22 |
+| Eye shine | White | #FFFFFF |
+| Crown (Founding Otter) | Gold | #E0B26A |
+| Crown stroke | Dark gold | #B58A3F |
+
+### Visual Description of the Otter
+
+Sitting posture. Round head with prominent round ears on each side (dark brown
+outer, warm brown inner). White/cream muzzle (elliptical, centered lower face).
+Two small dark brown dot eyes with a single white shine pixel each. Small dark
+elliptical nose. Subtle curved smile (no teeth). Oval body with cream belly
+patch. Two front paws crossed at the bottom. Signature gold scarf wrapped
+around the neck, hanging to one side with a small stripe detail on the scarf.
+No whiskers on the filled version. A gold crown variant exists for the
+Founding Otter badge.
+
+### 16 PNG Poses
+
+All 15 PNGs live at `frontend/assets/otter/`. They use the flat filled style
+described above:
+
+| File | Pose | Context |
+|---|---|---|
+| otter-default.png | Sitting with scarf spread | Default, generic use |
+| otter-focus.png | Attentive, leaning forward | Focus mode start |
+| otter-focused.png | Deep concentration | During focus session |
+| otter-working.png | Working at something | Active task state |
+| otter-working-bed.png | Working from bed (laptop?) | Cozy work mode |
+| otter-celebrate.png | Arms up, happy | Task completion |
+| otter-float.png | Floating on back, eyes closed | Rest / idle |
+| otter-float-awake.png | Floating on back, eyes open | Awake rest |
+| otter-crown.png | Sitting with gold crown | Founding Otter badge |
+| otter-wave.png | One paw up waving | Greeting |
+| otter-sleep.png | Curled up sleeping | Long idle |
+| otter-peek.png | Head only, peeking in | Inline decorative |
+| otter-sit-attentive.png | Attentive sitting (transparent bg) | Onboarding |
+| otter-sit-calm.png | Calm sitting (transparent bg) | Onboarding |
+| otter-hands-raised.png | Both paws raised (transparent bg) | Onboarding |
+
+## 7. Ottery Motif — Line Drawings (Secondary)
+
+These are secondary decorative marks, not the primary brand identifier.
 
 ### OtterGlyph
 
-The primary brand mark. Floating otter on back, single-line style. Used in
-navigation tabs, brand moments. Aspect ratio: 160x96 (5:3).
+Single-line floating otter on back. Used in navigation tabs, subtle brand
+moments. Aspect ratio 160x96 (5:3). Color: #5E8B82 (light) / #7BA89F (dark).
+Stroke width 1.5.
 
 ```
 Body: M20 60 C 30 30, 130 30, 140 60 C 130 78, 30 78, 20 60 Z
 Head: M138 58 C 148 52, 156 56, 154 66 C 152 74, 144 74, 140 68
 Ear: M148 56 L 150 52
-Paws (crossed on chest): M78 54 C 82 50, 88 50, 92 54 + M70 58 C 74 62, 96 62, 100 58
+Paws: M78 54 C 82 50, 88 50, 92 54 + M70 58 C 74 62, 96 62, 100 58
 Tail: M22 62 C 12 66, 10 74, 18 78
 ```
 
-Primary color: #5E8B82 (light), #7BA89F (dark). Stroke width: 1.5.
+### LineOtter (full float on water)
 
-### LineOtter (full float, water context)
+Used on Welcome and Crisis screens. ViewBox 200x136. Three water wave lines
+beneath at decreasing opacity (1.0, 0.75, 0.5).
 
-Used on Welcome and Crisis screens. Shows the otter floating on water with wave
-lines beneath. ViewBox: 200x136. Full SVG paths in
-`frontend/src/components/motifs.tsx:175-257`. Three subtle water waves under the
-otter at increasing opacities (1.0, 0.75, 0.5).
+### LineOtterPeek (head only)
 
-### LineOtterPeek (just the head)
-
-Used inline next to headings. ViewBox: 100x90. Head-only with ears, whiskers,
-and small smile.
+Used inline next to headings. ViewBox 100x90. Includes whiskers (the only mark
+that uses them).
 
 ### WaterWave
 
-Hairline calm-water wave for under cards/hero moments. ViewBox: 240x16.
+Hairline wave for under cards/hero moments. ViewBox 240x16.
 Path: M0 8 Q 30 0, 60 8 T 120 8 T 180 8 T 240 8
 
 ### StreakRipple
 
-Three concentric soft circles for streak visual. ViewBox: 140x140. Radii: 55, 38,
-22 with decreasing opacity (0.25, 0.45, 0.7).
-
-## 7. Otter Mascot — 16 PNG Poses
-
-The filled illustration style otter used inside the app. Warmer, cartoonier than
-the line marks. 16 variants in `frontend/assets/otter/`:
-
-| File | When Used |
-|---|---|
-| otter-default.png | Default, sitting with scarf |
-| otter-focus.png | Focus mode start |
-| otter-focused.png | In focus session |
-| otter-working.png | Working state |
-| otter-working-bed.png | Working from bed |
-| otter-celebrate.png | Task completion |
-| otter-float.png | Rest/idle, floating on water |
-| otter-float-awake.png | Awake floating |
-| otter-crown.png | Founding Otter badge |
-| otter-wave.png | Greeting / wave |
-| otter-sleep.png | Idle/sleep |
-| otter-peek.png | Peeking from edge |
-| otter-sit-attentive.png | Onboarding (transparent bg) |
-| otter-sit-calm.png | Onboarding (transparent bg) |
-| otter-hands-raised.png | Onboarding (transparent bg) |
-| otter-line.png | Falls back to LineOtter SVG |
-| otter-line-peek.png | Falls back to LineOtterPeek SVG |
-
-The filled otter uses warm brown (#8A6A4A) body, cream belly (#E8D8BE), gold
-scarf (#D4A24F). Small dark eyes with white shine dots. Subtle smile. The scarf
-is a defining accessory.
+Three concentric circles (radii 55, 38, 22) at decreasing opacity for streak
+visuals. Non-gamified.
 
 ## 8. Atmosphere — Gradient Background
 
 Time-of-day gradient system in `Atmosphere.tsx`. Four periods:
 
-- **Morning** (5-12h): Warm light, top #C4D4C0, bottom #E8DCC8
-- **Midday** (12-18h): Bright, top #B5D0D4, bottom #E0D8C8
-- **Dusk** (18-21h): Golden, top #B8A8A0, bottom #D4C4A8
-- **Night** (21-5h): Deep, top #14201D, bottom #1A2A24
+- Morning (5-12h): Top #C4D4C0, Bottom #E8DCC8
+- Midday (12-18h): Top #B5D0D4, Bottom #E0D8C8
+- Dusk (18-21h): Top #B8A8A0, Bottom #D4C4A8
+- Night (21-5h): Top #14201D, Bottom #1A2A24
 
-Atmosphere includes a water horizon line at y=75% and a subtle vignette overlay.
+Includes a water horizon line at y=75% and subtle vignette overlay.
 
 ## 9. Key Components
 
 ### ScreenHeader
-Teal-washed band (#E7EFEA light / #1F2D29 dark) with a hand-drawn wavy divider
-at bottom (BandWave component). 32px title in Fraunces SemiBold. Optional 12px
-uppercase eyebrow in General Sans with 4px letter spacing. Used on You + Room
-screens.
+Teal band (#E7EFEA light / #1F2D29 dark) with hand-drawn wavy divider at bottom
+(BandWave component). 32px title in Fraunces SemiBold. Optional 12px uppercase
+eyebrow in General Sans, 4px letter spacing.
 
 ### OtterButton
 Two variants: primary (filled #5E8B82) and ghost (border only). Pill shape
-(borderRadius 9999). General Sans Medium, 16px. TouchableOpacity with haptic
-feedback. Min height 48px.
+(borderRadius 9999). General Sans Medium, 16px. Min height 48px.
 
 ### EnergyPill
-Three-segment pill for energy level: low / medium / good. Each segment is a
-touchable pill. Active segment has filled primary bg, inactive has light bg with
-border.
+Three-segment pill: low / medium / good. Active segment filled primary bg,
+inactive has light bg with border.
 
 ### StreakStrip
-7 concentric ring day markers using StreakRipple motif. Days shown as:
-completed (solid primary), today (active ring), future (faint circle).
-Non-punitive — no streak count, no flame emoji. Just quiet rings.
+7 concentric ring day markers. Completed: solid primary. Today: active ring.
+Future: faint circle. No streak count. No flame emoji.
 
 ### IdleBreath
-5.6-second slow breath cycle. Shows the otter floating with a subtle scale
-animation (1.0 -> 1.04 -> 1.0). Eases in/out. After ~60s of inactivity, the
-otter floats to sleep.
-
-### Screen Layouts
-- **Inbox**: WarmBg background, list of "thoughts" as cards with delete. Top has
-  LineOtterPeek and greeting.
-- **Room**: TealBand header with "Your Room" title. Scrollable card grid of
-  activities/features.
-- **You**: TealBand header with profile. Settings list below.
-- **Next**: Focus mode screen with centered otter, timer, and task title.
-- **Shrink/[id]**: Task detail with steps, timer, difficulty picker, banner upsells.
-- **Paywall**: warmBg background, feature cards with WaterWave separator.
-- **Crisis**: Warm onboarding-style screen, LineOtter with waves, calming copy.
-- **Onboarding**: 6-screen flow (state.ts + screens/), fixed light palette.
+5.6s slow breath cycle. Otter scales 1.0 -> 1.04 -> 1.0 with ease-in-out.
 
 ### Tab Navigation
-Bottom tab bar with 4 tabs: Waves (OtterGlyph icon), Room, You, Inbox.
-Tab bar height: 64px + safe area inset. Uses the primary teal color for active tab.
+4 tabs: Waves (OtterGlyph icon), Room, You, Inbox. Tab bar height 64px +
+safe area inset. Active tab uses primary teal color.
 
 ## 10. Animations
 
 No bounce, no spring. 150-400ms ease-out. Two primitives:
-- FadeUp: FadeInDown with configurable delay (default 0) and duration (default 320ms)
-- SoftFade: FadeIn with configurable delay (default 0) and duration (default 250ms)
+- FadeUp: FadeInDown (default 320ms)
+- SoftFade: FadeIn (default 250ms)
 
 ## 11. Social Media Brand Image Specs
 
 ### Colors
+- Otter fur: #8A6A4A (warm brown)
+- Otter belly/muzzle: #E8D8BE (cream)
+- Scarf: #D4A24F (gold)
 - Brand primary: #5E8B82 (teal-green)
-- Brand accent: #D4A24F (gold)
-- Warm cream: #F5F1E8
-- Dark bg: #14201D
+- Background (light): #F5F1E8 (warm cream)
+- Background (dark): #14201D (deep teal)
+- Text (light): #18181B
+- Text (dark): #F3F5F4
 
 ### Elements that must appear
-- OtterGlyph (line drawing, floating otter on back) — the primary brand mark
-- Brand name "Otterly" in Fraunces SemiBold
-- Tagline: "Your calm task companion" (or similar warm messaging)
-- Optional: WaterWave motif as decorative element
+- The filled cartoon otter (warm brown, cream belly, gold scarf, dot eyes,
+  subtle smile) — this is the primary brand mark
+- Brand name "Otterly" in Fraunces SemiBold serif
+- Tagline: "your calm task companion" (or similar warm messaging)
+- Gold/or teal accent elements
 
-### Elements that MUST NOT appear
-- The filled cartoon PNG otter with brown fur — this is in-app only
-- Face features on the primary mark (no eyes/nose/smile on the main logo)
+### Elements that must NOT appear
 - Flame emojis, streak counts, or gamification elements
+- Aggressive or loud design elements
 
 ### Platform Requirements
 

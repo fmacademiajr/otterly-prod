@@ -7,7 +7,8 @@
 | `profile/otterly-profile-light.png` | All | Light mode (default). Upload to X, Instagram, TikTok, LinkedIn company page. |
 | `profile/otterly-profile-dark.png` | All | Dark mode variant. Swap for branded dark profiles if platform supports it. |
 
-Profile pictures are 1024x1024 masters. Platforms will crop to their mask shape (round for Instagram/TikTok, rounded-square for X/LinkedIn). Preview crop before uploading.
+Profile pictures are 1024x1024 masters. Platforms crop to their mask shape
+(round for Instagram/TikTok, rounded-square for X/LinkedIn).
 
 ## Banners
 
@@ -18,17 +19,19 @@ Profile pictures are 1024x1024 masters. Platforms will crop to their mask shape 
 | `banner/otterly-banner-linkedin-light.png` | LinkedIn company banner | 1584x396 |
 | `banner/otterly-banner-linkedin-dark.png` | LinkedIn company banner | 1584x396 |
 
-LinkedIn mobile crops ~100px from each side. The text and otter mark are centered within the safe zone.
+LinkedIn mobile crops ~100px from each side. Keep text and otter centered
+within the safe zone.
 
-## Design tokens
+## Brand colors
 
-- Background (light): `#FAFAFA`
-- Background (dark): `#14201D`
-- Otter stroke (light): `#5E8B82`
-- Otter stroke (dark): `#7BA89F`
-- Wordmark (light): `#18181B`
-- Wordmark (dark): `#F3F5F4`
-- Tagline (light): `#52525B`
-- Tagline (dark): `#A8B3B0`
-- Typeface: Fraunces (display serif)
-- No emojis, no drop shadows, no gradients
+- Otter fur: `#8A6A4A` (warm brown)
+- Otter belly / muzzle: `#E8D8BE` (cream)
+- Scarf: `#D4A24F` (gold)
+- Brand primary: `#5E8B82` (teal-green)
+- Background (light): `#F5F1E8` (warm cream)
+- Background (dark): `#14201D` (deep teal)
+- Text (light): `#18181B`
+- Text (dark): `#F3F5F4`
+- Display typeface: Fraunces SemiBold serif
+- Body typeface: General Sans Regular
+- No emojis, no drop shadows, no gradients, no gamification elements.
