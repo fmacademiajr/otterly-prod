@@ -73,6 +73,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<StoredUser | null>(null);
 
   const bootstrap = useCallback(async () => {
+    // Demo mode: dev-only, driven by AsyncStorage so automation
+    // (simctl launch + pre-written manifest) can skip real auth.
+    if (__DEV__) {
+      const raw = await storage.getItem<string | null>("otterly.demo_user", null);
+      if (raw) {
+        const demo = typeof raw === "string" ? JSON.parse(raw) : raw;
+        await identity.setToken("demo-session-token");
+        await identity.setUser(demo);
+        setUser(demo);
+        setStatus("authed");
+        return;
+      }
+    }
+
     // On web, process a redirect-embedded session_id first.
     if (Platform.OS === "web" && typeof window !== "undefined") {
       const sid = extractSessionIdFromUrl(window.location.href);
