@@ -25,6 +25,7 @@ import { useTheme } from "@/src/theme/ThemeProvider";
 import { fonts, radii, spacing } from "@/src/theme/tokens";
 import { storage } from "@/src/utils/storage";
 import { useAuth } from "@/src/auth/AuthProvider";
+import { checkReviewerCredentials } from "@/src/auth/reviewer";
 
 // Lives on the marketing site, which is already the app's public face. Apple 5.1.1
 // requires an in-app link to it for any app that collects data, and Otterly collects
@@ -33,7 +34,7 @@ import { useAuth } from "@/src/auth/AuthProvider";
 export default function YouScreen() {
   const { colors, isDark, mode, setMode } = useTheme();
   const router = useRouter();
-  const { user, status, signIn, signInWithApple, signOut, deleteAccount } = useAuth();
+  const { user, status, signIn, signInWithApple, signOut, deleteAccount, enableReviewerMode } = useAuth();
   const [stats, setStats] = useState<StreakStats | null>(null);
   const [access, setAccess] = useState<AccessSnapshot | null>(null);
   const [name, setName] = useState("");
@@ -46,6 +47,10 @@ export default function YouScreen() {
   const [voucherMessage, setVoucherMessage] = useState<{ text: string; ok: boolean } | null>(null);
   const [appleAvailable, setAppleAvailable] = useState(false);
   const [signInError, setSignInError] = useState<string | null>(null);
+  const [reviewerOpen, setReviewerOpen] = useState(false);
+  const [reviewerUsername, setReviewerUsername] = useState("");
+  const [reviewerPassword, setReviewerPassword] = useState("");
+  const [reviewerError, setReviewerError] = useState<string | null>(null);
   const deletingRef = useRef(false);
 
   useEffect(() => {
@@ -279,6 +284,106 @@ export default function YouScreen() {
             </View>
             <ChevronRight size={20} color={colors.textSubtle} strokeWidth={1.4} />
           </TouchableOpacity>
+
+          {status !== "authed" ? (
+            <View style={{ alignItems: "center", marginBottom: spacing.md }}>
+              <TouchableOpacity
+                onPress={() => setReviewerOpen((v) => !v)}
+                activeOpacity={0.6}
+              >
+                <Text style={{ color: colors.textSubtle, fontFamily: fonts.body, fontSize: 12 }}>
+                  Reviewer access
+                </Text>
+              </TouchableOpacity>
+              {reviewerOpen ? (
+                <View
+                  style={{
+                    marginTop: spacing.sm,
+                    width: "100%",
+                    borderWidth: 1,
+                    borderColor: colors.border,
+                    borderRadius: radii.lg,
+                    padding: spacing.base,
+                  }}
+                >
+                  <TextInput
+                    placeholder="Username"
+                    placeholderTextColor={colors.textSubtle}
+                    value={reviewerUsername}
+                    onChangeText={setReviewerUsername}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    style={{
+                      color: colors.text,
+                      fontFamily: fonts.body,
+                      fontSize: 15,
+                      borderWidth: 1,
+                      borderColor: colors.border,
+                      borderRadius: radii.md,
+                      paddingHorizontal: spacing.sm,
+                      paddingVertical: spacing.sm,
+                      marginBottom: spacing.sm,
+                    }}
+                  />
+                  <TextInput
+                    placeholder="Password"
+                    placeholderTextColor={colors.textSubtle}
+                    value={reviewerPassword}
+                    onChangeText={setReviewerPassword}
+                    secureTextEntry
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    style={{
+                      color: colors.text,
+                      fontFamily: fonts.body,
+                      fontSize: 15,
+                      borderWidth: 1,
+                      borderColor: colors.border,
+                      borderRadius: radii.md,
+                      paddingHorizontal: spacing.sm,
+                      paddingVertical: spacing.sm,
+                      marginBottom: spacing.sm,
+                    }}
+                  />
+                  <TouchableOpacity
+                    onPress={() => {
+                      const ok = checkReviewerCredentials(reviewerUsername, reviewerPassword);
+                      if (ok) {
+                        enableReviewerMode();
+                      } else {
+                        setReviewerError("Invalid credentials");
+                        setTimeout(() => setReviewerError(null), 2000);
+                      }
+                    }}
+                    activeOpacity={0.7}
+                    style={{
+                      backgroundColor: colors.primary,
+                      borderRadius: radii.md,
+                      paddingVertical: spacing.sm,
+                      alignItems: "center",
+                    }}
+                  >
+                    <Text style={{ color: "#FFFFFF", fontFamily: fonts.bodySemibold, fontSize: 15 }}>
+                      Sign in
+                    </Text>
+                  </TouchableOpacity>
+                  {reviewerError ? (
+                    <Text
+                      style={{
+                        color: colors.danger,
+                        fontFamily: fonts.body,
+                        fontSize: 13,
+                        marginTop: spacing.sm,
+                        textAlign: "center",
+                      }}
+                    >
+                      {reviewerError}
+                    </Text>
+                  ) : null}
+                </View>
+              ) : null}
+            </View>
+          ) : null}
 
           <Text style={[styles.section, { color: colors.textSubtle, fontFamily: fonts.body }]}>
             settings

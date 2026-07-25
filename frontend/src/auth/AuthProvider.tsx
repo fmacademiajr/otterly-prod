@@ -16,6 +16,7 @@ type AuthCtx = {
   signOut: () => Promise<void>;
   deleteAccount: () => Promise<void>;
   refresh: () => Promise<void>;
+  enableReviewerMode: () => void;
 };
 
 const AuthContext = createContext<AuthCtx | null>(null);
@@ -212,9 +213,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setStatus("anonymous");
   }, []);
 
+  const enableReviewerMode = useCallback(() => {
+    const fakeUser: StoredUser = {
+      user_id: "reviewer-user",
+      email: "reviewer@otterly-test.app",
+      name: "Apple Reviewer",
+      picture: null,
+    };
+    identity.setToken("reviewer-mode-token");
+    identity.setUser(fakeUser);
+    setUser(fakeUser);
+    setStatus("authed");
+  }, []);
+
   return (
     <AuthContext.Provider
-      value={{ status, user, signIn, signInWithApple, signOut, deleteAccount, refresh: bootstrap }}
+      value={{ status, user, signIn, signInWithApple, signOut, deleteAccount, refresh: bootstrap, enableReviewerMode }}
     >
       {children}
     </AuthContext.Provider>
