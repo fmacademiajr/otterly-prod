@@ -1,105 +1,169 @@
-# Otterly Design System — v2 Stitch Redesign
+# Otterly Design System
 
-## 1. Brand Philosophy
+## 1. What Otterly is
 
-Otterly is an ADHD-friendly task companion. Warm, non-punitive, quiet. The brand
-otter is a soft filled-illustration cartoon otter with warm brown fur, cream
-belly, and a signature gold scarf. Small dot eyes, subtle smile. The otter is
-the hero of the brand, not a secondary mark. A secondary single-line floating
-otter exists as a decorative motif but is not the primary brand identifier.
+Otterly is a calm task-starter for people with ADHD and chronic overwhelm. Philippines-first, iOS launch. Positioning line: "Start, Not Alone." Subtitle: "Calm ADHD task starter."
 
-## 2. Color Palette
+The thesis: task lists are the disease, not the cure. The home screen shows one thing, never a list, never a badge.
 
-### Light Mode
+## 2. Product features (from the code, not invented)
 
-| Token | Hex | Usage |
-|---|---|---|
-| background | #FFFFFF | Main screen bg |
-| warmBg | #F5F1E8 | Inbox, Paywall, warm hero screens |
-| warmSurface | #FBF8F0 | Cards on warm bg |
-| warmBorder | #E5DFCE | Borders on warm surface |
-| surface | #FAFAFA | Card backgrounds |
-| surfaceMuted | #F4F4F5 | Muted card bg |
-| border | #E4E4E7 | Default borders |
-| text | #18181B | Body text |
-| textMuted | #52525B | Secondary text |
-| textSubtle | #71717A | Tertiary/meta text |
-| tealBand | #E7EFEA | Screen header band fill |
-| tealBandBorder | #C7D9CF | Screen header wave stroke |
-| primary | #5E8B82 | Primary buttons, links |
-| primaryHover | #4E7670 | Button pressed state |
-| primaryActive | #3F605B | Button active state |
-| primarySurface | #EDF4F1 | Light primary bg |
-| primarySurfaceStrong | #D6E4DD | Stronger primary bg |
-| accent | #D4A24F | Accent gold (scarf, highlights) |
-| accentSoft | #EBD6A6 | Soft accent bg |
-| accentSurface | #F6E9C9 | Accent card bg |
-| success | #3F7D58 | Success states |
-| warning | #B58A3F | Warning states |
-| danger | #A04848 | Destructive actions |
-| onPrimary | #FFFFFF | Text on primary |
-| onAccent | #FFFFFF | Text on accent |
+The app ships these features. Nothing else:
 
-### Dark Mode
+- Task Shrinker. Take one hard task, get 3 to 10 tiny physical steps. Physical verbs only.
+- The one-thing home screen (Next tab). Shows a single next action, never a growing list, never a badge.
+- The Room (Sit-With-Me). Text-based body-double. A quiet otter sits with you while you work.
+- Braindump. Dump a paragraph into the Inbox, get a short list back.
+- Soft Streak (You tab). Seven quiet rings for days you showed up. No fire, no shame.
+- Energy Pill. Low / medium / good. On low the app picks smaller steps.
+- Voice capture. Turns spoken tasks into text. Mic button beside the input.
 
-| Token | Hex | Usage |
-|---|---|---|
-| background | #14201D | Main screen bg |
-| warmBg | #1D2622 | Warm variant |
-| warmSurface | #243029 | Warm card bg |
-| warmBorder | #334037 | Warm border |
-| surface | #1B2926 | Card bg |
-| surfaceMuted | #20302C | Muted card |
-| border | #2C3A36 | Borders |
-| text | #F3F5F4 | Body text |
-| textMuted | #A8B3B0 | Secondary text |
-| textSubtle | #8F9B98 | Tertiary text |
-| tealBand | #1F2D29 | Header band |
-| tealBandBorder | #2C3A36 | Header wave stroke |
-| primary | #7BA89F | Primary buttons |
-| primaryHover | #8FB8B0 | Button hover |
-| primaryActive | #8FB8B0 | Button active |
-| primarySurface | #1F2D29 | Primary bg |
-| primarySurfaceStrong | #2A3F39 | Stronger primary bg |
-| accent | #E0B26A | Accent gold |
-| accentSoft | #4A3E24 | Soft accent |
-| accentSurface | #3A2F1C | Accent card |
-| success | #5E9E78 | Success |
-| warning | #B58A3F | Warning |
-| danger | #B25656 | Danger |
-| onPrimary | #14201D | Text on primary |
-| onAccent | #14201D | Text on accent |
+Free forever. Deep Shrink is a one-time purchase or small monthly. Vouchers for anyone who cannot pay.
 
-### Onboarding Palette (fixed light, never dark)
+## 3. Screen names and labels (from actual app code)
 
-| Token | Hex | Usage |
-|---|---|---|
-| bg | #eef1ee | Onboarding outer bg |
-| screen | #f7f5f0 | Onboarding card bg |
-| screenWarm | #f1ede4 | Warm variant |
-| ink | #39403b | Onboarding headings |
-| inkSoft | #5f675f | Onboarding body (WCAG AA) |
-| inkFaint | #9aa39b | Skip/Not-now only |
-| water | #7fa8a0 | Water accent |
-| waterSoft | #cfe0db | Soft water bg |
-| line | #e2ddd2 | Card borders |
-| card | #fffdf8 | Onboarding card surface |
+### Next tab (one-thing home)
+- Greeting: "Hello" or "Hello, {name}"
+- Energy question: "How's your energy right now?"
+- Low energy hint: "I'll keep your next step tiny."
+- Medium energy hint: "I'll pick a small step."
+- Good energy hint: "I'll give you a little more."
+- Task card eyebrow: "DO THIS NEXT"
+- Task card shows: step text, ~{n} min pill, parent task, reason text
+- Primary button: "Start" (when step exists) / "Add something" (when empty)
+- Soft exits: "Not this one. Pick another", "I'm too tired for this", "Skip for now"
+- Empty state: "What's on your mind?" / "Add one thing you've been avoiding." / "We'll shrink it together."
+- Loading: "Picking one small thing..."
+- Error: "Otterly couldn't reach the server. Try again in a moment."
 
-## 3. Typography
+### Inbox tab
+- Header: "Add anything you're avoiding"
+- Input label: Mic and text. Quick add or dump mode.
+- Primary button: "Braindump"
+- List: Tasks with delete. Capped at 7 items.
+- Soft exits: Not this — pick another, Come back later.
 
-| Role | Font | Weight | Font File |
-|---|---|---|---|
-| Display | Fraunces | Medium (500) | Fraunces_500Medium |
-| Display bold | Fraunces | SemiBold (600) | Fraunces_600SemiBold |
-| Body | General Sans | Regular | GeneralSans_Regular |
-| Body medium | General Sans | Medium | GeneralSans_Medium |
-| Body semibold | General Sans | Semibold | GeneralSans_Semibold |
-| Numeric | DM Sans | Medium (500) | DMSans_500Medium |
+### Room tab (Sit-With-Me)
+- Chat-style interface, low-stim. Message sparse.
+- Greeting: Fraunces warm welcome.
 
-Usage: Fraunces for headlines (serif, warm). General Sans for body and UI
-(clean sans). DM Sans for numbers (geometric sans).
+### You tab
+- ScreenHeader with "You" title and BandWave
+- StreakStrip: 7 concentric ring day markers
+- Settings: Name, Reminder time, Theme toggle (Light/Dark/System), Sign in, Sign out
+- Terms and privacy links
 
-## 4. Spacing
+### Onboarding (7 screens, exact names from flow spec)
+- S1 Arrival: "Can't start? You're not broken." / "Stress takes your planning brain offline. Otterly holds the plan for you." / Button: "Okay"
+- S2 The breath: "One breath first." / "Ten seconds. Long, slow exhale." / Skip label: "Skip"
+- S3 One thing in: "What's the one thing you can't start?" / "Type it or say it. Your words are enough." / Button: "Okay"
+- S4 The shrink: "The first tiny step, in their context." / "I'm holding the rest. You only ever see one thing." / Button: "Okay"
+- S5 Sit with me: "I'll sit with you while you do it." / "No timer. No watching. Tap Done whenever you get back." / Button: "Done" / Soft exit: "Not now"
+- S6 The win: "That counts." / "You started. That was the hard part." / Button: "Okay" / Not now variant: "Still here. That counts." / "The step will wait."
+- S7 How Otterly behaves: "No lists. No badges. No nagging." / "Want me to check in gently sometimes? Either answer is right." / Two buttons: "Check in gently" and "Stay quiet"
+
+### Crisis screen
+- A calming screen shown when the user signals crisis.
+
+## 4. Color palette
+
+### Light mode (from design_guidelines.json + tokens.ts)
+
+| Token | Hex |
+|---|---|
+| background | #FFFFFF |
+| surface | #FAFAFA |
+| surfaceMuted | #F4F4F5 |
+| border | #E4E4E7 |
+| text | #18181B |
+| textMuted | #52525B |
+| textSubtle | #71717A |
+| primary | #5E8B82 |
+| primaryHover | #4E7670 |
+| primaryActive | #3F605B |
+| primarySurface | #EDF4F1 |
+| primarySurfaceStrong | #D6E4DD |
+| accent | #D4A24F |
+| accentSoft | #EBD6A6 |
+| accentSurface | #F6E9C9 |
+| warmBg | #F5F1E8 |
+| warmSurface | #FBF8F0 |
+| warmBorder | #E5DFCE |
+| tealBand | #E7EFEA |
+| tealBandBorder | #C7D9CF |
+| success | #3F7D58 |
+| warning | #B58A3F |
+| danger | #A04848 |
+| onPrimary | #FFFFFF |
+| onAccent | #FFFFFF |
+| splashBg | #F7F3EA |
+
+### Dark mode (from design_guidelines.json + tokens.ts)
+
+| Token | Hex |
+|---|---|
+| background | #14201D |
+| surface | #1B2926 |
+| surfaceMuted | #20302C |
+| border | #2C3A36 |
+| text | #F3F5F4 |
+| textMuted | #A8B3B0 |
+| textSubtle | #8F9B98 |
+| primary | #7BA89F |
+| primaryHover | #8FB8B0 |
+| primaryActive | #8FB8B0 |
+| primarySurface | #1F2D29 |
+| primarySurfaceStrong | #2A3F39 |
+| accent | #E0B26A |
+| accentSoft | #4A3E24 |
+| accentSurface | #3A2F1C |
+| warmBg | #1D2622 |
+| warmSurface | #243029 |
+| warmBorder | #334037 |
+| tealBand | #1F2D29 |
+| tealBandBorder | #2C3A36 |
+| success | #5E9E78 |
+| warning | #B58A3F |
+| danger | #B25656 |
+| onPrimary | #14201D |
+| onAccent | #14201D |
+
+### Onboarding palette (fixed light, never dark, from design_guidelines.json)
+
+| Token | Hex |
+|---|---|
+| bg | #eef1ee |
+| screen | #f7f5f0 |
+| screenWarm | #f1ede4 |
+| ink | #39403b |
+| inkSoft | #5f675f |
+| inkFaint | #9aa39b |
+| water | #7fa8a0 |
+| waterSoft | #cfe0db |
+| line | #e2ddd2 |
+| card | #fffdf8 |
+
+## 5. Typography
+
+From design_guidelines.json:
+
+| Style | Font | Weight | Size | Line Height |
+|---|---|---|---|---|
+| h1 (Fraunces display) | Fraunces | SemiBold | 32 | 40 |
+| h2 | Fraunces | SemiBold | 24 | 32 |
+| h3 | General Sans | Semibold (600) | 18 | 24 |
+| body | General Sans | Regular (400) | 16 | 24 |
+| bodyMuted | General Sans | Regular (400) | 14 | 20 |
+| timer | DM Sans | Medium | 56 | tabular-nums |
+| button | General Sans | Semibold (600) | 16 | |
+
+Font files loaded: Fraunces_500Medium, Fraunces_600SemiBold, GeneralSans_Regular, GeneralSans_Medium, GeneralSans_Semibold, DMSans_500Medium.
+
+Rules: Fraunces for warm/emotional moments only. DM Sans exclusively for numbers. No Inter, Roboto, Poppins, or system-ui.
+
+## 6. Spacing
+
+From design_guidelines.json and tokens.ts:
 
 | Token | Pixels |
 |---|---|
@@ -112,7 +176,7 @@ Usage: Fraunces for headlines (serif, warm). General Sans for body and UI
 | xxl | 48 |
 | xxxl | 64 |
 
-## 5. Border Radii
+## 7. Radii
 
 | Token | Pixels |
 |---|---|
@@ -122,172 +186,93 @@ Usage: Fraunces for headlines (serif, warm). General Sans for body and UI
 | xl | 20 |
 | pill | 9999 |
 
-## 6. Otter Mascot — Primary Brand Asset (Filled Illustration)
+## 8. The otter
 
-The brand otter is a soft filled-illustration cartoon otter. This is the primary
-visual identifier for Otterly. It appears in 16 PNG poses in the app.
+### The real mascot (from docs/design-handoff/README.md)
 
-### Colors of the Otter
+"A soft brown otter wrapped in a plaid blanket, rounded, hand-drawn, warm."
 
-| Part | Color | Hex |
+The source-of-truth otter assets are in `docs/design-handoff/otter/` (12 PNGs). The `frontend/assets/otter/` folder contains older placeholders. Use the design-handoff poses.
+
+### Otter colors (from FallbackOtter component, OtterMascot.tsx)
+
+| Part | Hex |
+|---|---|
+| Body and head fur | #8A6A4A |
+| Ears (outer) | #5E4530 |
+| Ears (inner) | #8A6A4A |
+| Belly and muzzle | #E8D8BE |
+| Scarf | #D4A24F |
+| Scarf stroke | #B58A3F |
+| Eyes and nose | #3B2E22 |
+| Eye shine | #FFFFFF |
+| Crown | #E0B26A |
+| Crown stroke | #B58A3F |
+
+### The 12 poses and where they go (from design-handoff README)
+
+| File | Pose | Used on |
 |---|---|---|
-| Body / head fur | Warm brown | #8A6A4A |
-| Ears (outer) | Dark brown | #5E4530 |
-| Ears (inner) | Warm brown | #8A6A4A |
-| Belly / muzzle | Cream | #E8D8BE |
-| Scarf | Gold | #D4A24F |
-| Scarf stripe / stroke | Darker gold | #B58A3F |
-| Eyes / nose | Dark brown | #3B2E22 |
-| Eye shine | White | #FFFFFF |
-| Crown (Founding Otter) | Gold | #E0B26A |
-| Crown stroke | Dark gold | #B58A3F |
+| otter-sit-attentive.png | Sitting, paws together, leaning in, calm | Onboarding S4 hand-over |
+| otter-sit-calm.png | Sitting, paws tucked under blanket, settled | Onboarding S5 sit-with-me idle |
+| otter-float-awake.png | Floating on back, eyes open, fully relaxed | Alternate S5 idle, calm empty state |
+| otter-hands-raised.png | Arms up, gentle closed-mouth smile | Onboarding S6 the win |
+| otter-celebrate.png | Arms thrown up, big open grin | Big milestone. Not for S6. |
+| otter-wave.png | One paw raised, warm smile | Hello. Room entry, returning-user greeting. Not S1. |
+| otter-working.png | Sitting with a laptop | Room / body-double |
+| otter-working-bed.png | Lying down at a laptop, cozy, transparent bg | Alt Room / body-double, sleepier |
+| otter-focus-timer.png | Blanket-wrapped, mildly grumpy | Focus/timer state, if added |
+| otter-float-asleep.png | Floating on back asleep, serene | Rest, end of session |
+| otter-sleep.png | Curled in a ball asleep, transparent bg | Deep rest, idle-too-long |
+| otter-pickleball.png | Holding a pickleball paddle | Marketing, stickers, fun empty state |
 
-### Visual Description of the Otter
+### The line-drawing floating otter (secondary, decorative only)
 
-Sitting posture. Round head with prominent round ears on each side (dark brown
-outer, warm brown inner). White/cream muzzle (elliptical, centered lower face).
-Two small dark brown dot eyes with a single white shine pixel each. Small dark
-elliptical nose. Subtle curved smile (no teeth). Oval body with cream belly
-patch. Two front paws crossed at the bottom. Signature gold scarf wrapped
-around the neck, hanging to one side with a small stripe detail on the scarf.
-No whiskers on the filled version. A gold crown variant exists for the
-Founding Otter badge.
+Used in the tab bar and as a subtle SVG motif. Single path, stroke only, no fill. The NFT "OtterGlyph" SVG in motifs.tsx. This is not the brand mark. The filled cartoon otter is the brand mark.
 
-### 16 PNG Poses
+### NO other marks
 
-All 15 PNGs live at `frontend/assets/otter/`. They use the flat filled style
-described above:
+No second character. No different art style. No photo. No abstract logo.
 
-| File | Pose | Context |
-|---|---|---|
-| otter-default.png | Sitting with scarf spread | Default, generic use |
-| otter-focus.png | Attentive, leaning forward | Focus mode start |
-| otter-focused.png | Deep concentration | During focus session |
-| otter-working.png | Working at something | Active task state |
-| otter-working-bed.png | Working from bed (laptop?) | Cozy work mode |
-| otter-celebrate.png | Arms up, happy | Task completion |
-| otter-float.png | Floating on back, eyes closed | Rest / idle |
-| otter-float-awake.png | Floating on back, eyes open | Awake rest |
-| otter-crown.png | Sitting with gold crown | Founding Otter badge |
-| otter-wave.png | One paw up waving | Greeting |
-| otter-sleep.png | Curled up sleeping | Long idle |
-| otter-peek.png | Head only, peeking in | Inline decorative |
-| otter-sit-attentive.png | Attentive sitting (transparent bg) | Onboarding |
-| otter-sit-calm.png | Calm sitting (transparent bg) | Onboarding |
-| otter-hands-raised.png | Both paws raised (transparent bg) | Onboarding |
+## 9. Visual rules (from design_guidelines.json)
 
-## 7. Ottery Motif — Line Drawings (Secondary)
+- Shadows: FORBIDDEN. No drop shadows, no glow, no elevation APIs.
+- Borders: 1px hairline only, using the border color token.
+- Cards: Surface colored, 12px radius, 1px border. Flat design.
+- Buttons: Primary are teal (primary), 12px radius (Next page uses pill/9999). Text #FFFFFF.
+- Icons: Lucide React Native. Emojis as icons are banned.
+- Wave motif: A delicate SVG wave. Decorative underline accent. Never a repeating bg pattern.
+- Motion: Calm, slow, no bounce. 150-400ms. FadeIn or FadeInDown. Crossfade for screen transitions.
+- Shadows, glow, elevation: all forbidden.
+- Purple and neon alert colors: banned.
+- The MicroStepCard on Next shows exactly one task. Never a scrollable todo list.
 
-These are secondary decorative marks, not the primary brand identifier.
+## 10. Social media brand assets
 
-### OtterGlyph
+### Elements from the app that must appear
 
-Single-line floating otter on back. Used in navigation tabs, subtle brand
-moments. Aspect ratio 160x96 (5:3). Color: #5E8B82 (light) / #7BA89F (dark).
-Stroke width 1.5.
-
-```
-Body: M20 60 C 30 30, 130 30, 140 60 C 130 78, 30 78, 20 60 Z
-Head: M138 58 C 148 52, 156 56, 154 66 C 152 74, 144 74, 140 68
-Ear: M148 56 L 150 52
-Paws: M78 54 C 82 50, 88 50, 92 54 + M70 58 C 74 62, 96 62, 100 58
-Tail: M22 62 C 12 66, 10 74, 18 78
-```
-
-### LineOtter (full float on water)
-
-Used on Welcome and Crisis screens. ViewBox 200x136. Three water wave lines
-beneath at decreasing opacity (1.0, 0.75, 0.5).
-
-### LineOtterPeek (head only)
-
-Used inline next to headings. ViewBox 100x90. Includes whiskers (the only mark
-that uses them).
-
-### WaterWave
-
-Hairline wave for under cards/hero moments. ViewBox 240x16.
-Path: M0 8 Q 30 0, 60 8 T 120 8 T 180 8 T 240 8
-
-### StreakRipple
-
-Three concentric circles (radii 55, 38, 22) at decreasing opacity for streak
-visuals. Non-gamified.
-
-## 8. Atmosphere — Gradient Background
-
-Time-of-day gradient system in `Atmosphere.tsx`. Four periods:
-
-- Morning (5-12h): Top #C4D4C0, Bottom #E8DCC8
-- Midday (12-18h): Top #B5D0D4, Bottom #E0D8C8
-- Dusk (18-21h): Top #B8A8A0, Bottom #D4C4A8
-- Night (21-5h): Top #14201D, Bottom #1A2A24
-
-Includes a water horizon line at y=75% and subtle vignette overlay.
-
-## 9. Key Components
-
-### ScreenHeader
-Teal band (#E7EFEA light / #1F2D29 dark) with hand-drawn wavy divider at bottom
-(BandWave component). 32px title in Fraunces SemiBold. Optional 12px uppercase
-eyebrow in General Sans, 4px letter spacing.
-
-### OtterButton
-Two variants: primary (filled #5E8B82) and ghost (border only). Pill shape
-(borderRadius 9999). General Sans Medium, 16px. Min height 48px.
-
-### EnergyPill
-Three-segment pill: low / medium / good. Active segment filled primary bg,
-inactive has light bg with border.
-
-### StreakStrip
-7 concentric ring day markers. Completed: solid primary. Today: active ring.
-Future: faint circle. No streak count. No flame emoji.
-
-### IdleBreath
-5.6s slow breath cycle. Otter scales 1.0 -> 1.04 -> 1.0 with ease-in-out.
-
-### Tab Navigation
-4 tabs: Waves (OtterGlyph icon), Room, You, Inbox. Tab bar height 64px +
-safe area inset. Active tab uses primary teal color.
-
-## 10. Animations
-
-No bounce, no spring. 150-400ms ease-out. Two primitives:
-- FadeUp: FadeInDown (default 320ms)
-- SoftFade: FadeIn (default 250ms)
-
-## 11. Social Media Brand Image Specs
-
-### Colors
-- Otter fur: #8A6A4A (warm brown)
-- Otter belly/muzzle: #E8D8BE (cream)
-- Scarf: #D4A24F (gold)
-- Brand primary: #5E8B82 (teal-green)
-- Background (light): #F5F1E8 (warm cream)
-- Background (dark): #14201D (deep teal)
-- Text (light): #18181B
-- Text (dark): #F3F5F4
-
-### Elements that must appear
-- The filled cartoon otter (warm brown, cream belly, gold scarf, dot eyes,
-  subtle smile) — this is the primary brand mark
-- Brand name "Otterly" in Fraunces SemiBold serif
-- Tagline: "your calm task companion" (or similar warm messaging)
-- Gold/or teal accent elements
+- The filled cartoon otter (warm brown #8A6A4A, cream belly #E8D8BE, gold scarf #D4A24F). The "sit-attentive" or "sit-calm" pose is the default.
+- Name "Otterly" in Fraunces SemiBold.
+- Positioning line: "Start, Not Alone." Alternatively: "Calm ADHD task starter."
+- Primary teal #5E8B82 and warm cream #F5F1E8.
+- Gold accent #D4A24F.
 
 ### Elements that must NOT appear
-- Flame emojis, streak counts, or gamification elements
-- Aggressive or loud design elements
 
-### Platform Requirements
+- No gamification: no flame emoji, no streak count, no "don't break the chain", no badges, no XP, no score.
+- No medical claims. Not a treatment. "Calm task-starter" is the category.
+- No generic wellness app aesthetics.
+- No purple, no neon, no drop shadows, no gradients outside the Atmosphere component.
+- No emojis as icons.
+- No the line-drawing otter glyph as the primary mark (filled cartoon otter is primary).
 
-| Platform | Asset | Dimensions | Format |
-|---|---|---|---|
-| X (Twitter) | Profile | 1024x1024 | PNG |
-| X (Twitter) | Banner | 1500x500 | PNG |
-| LinkedIn | Profile | 400x400 | PNG |
-| LinkedIn | Banner | 1584x396 | PNG |
-| GitHub | Profile | 1024x1024 | PNG |
-| App Store | Icon | 1024x1024 | PNG |
-| Web | Favicon | 32x32 | ICO/PNG |
+### Platform requirements
+
+| Platform | Asset | Dimensions |
+|---|---|---|
+| X (Twitter) | Profile | 1024x1024 |
+| X (Twitter) | Banner | 1500x500 |
+| LinkedIn | Profile | 400x400 |
+| LinkedIn | Banner | 1584x396 |
+| GitHub | Profile | 1024x1024 |
+| App Store | Icon | 1024x1024 |

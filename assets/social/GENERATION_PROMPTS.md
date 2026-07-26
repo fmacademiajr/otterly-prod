@@ -1,158 +1,103 @@
-# Image Generation Prompts — One Asset Per Step
+# Image Generation Prompts
 
-Use these prompts one at a time with Stable Diffusion, Midjourney, DALL-E 3,
-or Ideogram. Feed DESIGN_SYSTEM.md to the tool first, then paste one prompt
-per generation.
-
-The reference otter files are at `frontend/assets/otter/`. Use
-`otter-default.png` as the style reference for the filled cartoon look.
+For each step: provide `docs/design-handoff/otter/otter-sit-attentive.png` as the
+input image. The model places that otter into the composition as-is. Do not
+regenerate or reinterpret the otter. Prompts describe only the layout,
+background, typography, and decorative elements around it.
 
 ---
 
-## Step 1 — Light Profile Icon (1024x1024)
+## Step 1 — Light Profile Icon
 
-Purpose: Brand icon for light-mode social profiles (X, GitHub, LinkedIn).
+Input: `otter-sit-attentive.png`
+Output: 1024x1024 PNG
 
 ```
-A soft filled-illustration cartoon otter sitting calmly. Warm brown fur
-(#8A6A4A), cream belly and muzzle (#E8D8BE), small dark dot eyes with
-white shine, tiny dark oval nose, subtle curved smile. Round ears with
-dark brown outer and warm brown inner. A gold scarf (#D4A24F) wrapped
-around the neck with a small stripe detail. Oval body with crossed paws
-at the bottom. Flat filled illustration style, no thick outlines, no
-shading. Centered on a warm cream background (#F5F1E8). Square format
-1024x1024. No text. No emojis. No gamification. The otter should look
-calm, warm, and approachable.
+Place the provided otter image centered on a warm cream background
+#F5F1E8. The otter keeps its original proportions, centered in the
+frame. Do not alter the otter. No text. No decorative elements.
+Output as 1024x1024 PNG.
 ```
 
-Reference: `frontend/assets/otter/otter-default.png`
+For dark variant: use background #14201D.
 
 ---
 
-## Step 2 — Dark Profile Icon (1024x1024)
+## Step 2 — Light X Banner
 
-Purpose: Brand icon for dark-mode social profiles.
+Input: `otter-sit-attentive.png`
+Output: 1500x500 PNG
 
 ```
-A soft filled-illustration cartoon otter sitting calmly. Warm brown fur
-(#8A6A4A), cream belly and muzzle (#E8D8BE), small dark dot eyes with
-white shine, tiny dark oval nose, subtle curved smile. Round ears with
-dark brown outer and warm brown inner. A gold scarf (#D4A24F) wrapped
-around the neck with a small stripe detail. Oval body with crossed paws
-at the bottom. Flat filled illustration style, no thick outlines, no
-shading. Centered on a dark teal background (#14201D). Square format
-1024x1024. No text. No emojis.
+Place the provided otter image on the left side, about 180px tall,
+original proportions. Do not alter the otter. Background warm cream
+#F5F1E8. To the right of the otter: "Otterly" in Fraunces SemiBold
+serif font, color #18181B, 56px. Below the wordmark: "Start, Not
+Alone." in General Sans Regular, color #52525B, 18px. Bottom edge:
+a thin decorative wavy line in teal #C7D9CF spanning full width.
+Plenty of negative space. No emojis. No drop shadows. No gradients.
+Output as 1500x500.
 ```
+
+For dark variant: background #14201D, text #F3F5F4, tagline #A8B3B0, wave line #2C3A36.
 
 ---
 
-## Step 3 — Light X Banner (1500x500)
+## Step 3 — Light LinkedIn Banner
 
-Purpose: X/Twitter profile header (light mode).
+Input: `otter-sit-attentive.png`
+Output: 1584x396 PNG
 
 ```
-Wide banner 1500x500. Left side: a small filled cartoon otter (warm brown
-fur #8A6A4A, cream belly, gold scarf #D4A24F) sitting calmly, about 180px
-tall. To its right: "Otterly" in Fraunces SemiBold serif font, dark text
-#18181B, approximately 56px. Below the wordmark: "your calm task companion"
-in General Sans Regular, muted text #52525B, approximately 18px.
-Background: warm cream #F5F1E8. Bottom edge: a thin decorative wavy line
-in teal #C7D9CF spanning the full width. Plenty of negative space. Minimal,
-warm, premium feel. No emojis, no drop shadows, no gradients.
+Place the provided otter image on the left side, about 120px tall,
+original proportions. Do not alter the otter. Background warm cream
+#F5F1E8. To the right: "Otterly" in Fraunces SemiBold, #18181B,
+40px. Below: "Start, Not Alone." in General Sans Regular, #52525B,
+16px. Bottom edge: thin decorative wavy line in teal #C7D9CF. All
+text and otter must fit within the center 1300px safe zone for
+mobile crop. No emojis. No drop shadows. No gradients.
+Output as 1584x396.
 ```
+
+For dark variant: background #14201D, text #F3F5F4, tagline #A8B3B0, wave line #2C3A36.
 
 ---
 
-## Step 4 — Dark X Banner (1500x500)
+## Step 4 — App Icon
 
-Purpose: X/Twitter profile header (dark mode).
+Input: `otter-sit-attentive.png`
+Output: 1024x1024 PNG
 
 ```
-Wide banner 1500x500. Left side: a small filled cartoon otter (warm brown
-fur #8A6A4A, cream belly, gold scarf #D4A24F) sitting calmly, about 180px
-tall. To its right: "Otterly" in Fraunces SemiBold serif font, light text
-#F3F5F4, approximately 56px. Below the wordmark: "your calm task companion"
-in General Sans Regular, muted text #A8B3B0, approximately 18px.
-Background: dark teal #14201D. Bottom edge: a thin decorative wavy line
-in #2C3A36 spanning the full width. Plenty of negative space. Minimal,
-warm, premium feel. No emojis, no drop shadows, no gradients.
+Place the provided otter image centered on a warm cream background
+#F5F1E8. Scale the otter to fill about 70% of the frame, keeping
+original proportions. Do not alter the otter. No text. No decorative
+elements. Output as 1024x1024 PNG.
 ```
 
 ---
 
-## Step 5 — Light LinkedIn Banner (1584x396)
+## Step 5 — Brand Scene (optional)
 
-Purpose: LinkedIn company page banner (light mode). Text must fit within
-the center ~1300px safe zone for mobile crop.
+Input: `otter-sit-attentive.png`
+Output: 1024x1024 PNG
 
 ```
-Wide banner 1584x396. Left side: a small filled cartoon otter (warm brown
-fur #8A6A4A, cream belly, gold scarf #D4A24F) sitting calmly. To its right:
-"Otterly" in Fraunces SemiBold serif font, dark text #18181B, approximately
-40px. Below: "your calm task companion" in General Sans Regular, muted text
-#52525B, approximately 16px. Background: warm cream #F5F1E8. Bottom edge:
-a thin decorative wavy line in teal #C7D9CF. Text and otter fit within the
-center 1300px. Minimal, professional, warm. No emojis, no drop shadows,
-no gradients.
+Place the provided otter image centered in the upper half of a
+square composition. Background warm cream #F5F1E8, softly gradated
+to teal #E7EFEA at the bottom. Do not alter the otter. Below the
+otter: "Otterly" in Fraunces SemiBold, #18181B, 48px. Below that:
+"Start, Not Alone." in General Sans Regular, #52525B, 20px. Bottom
+edge: thin decorative wavy line in teal #C7D9CF. Output as 1024x1024.
 ```
 
 ---
 
-## Step 6 — Dark LinkedIn Banner (1584x396)
+## How to run
 
-Purpose: LinkedIn company page banner (dark mode).
+1. Provide `docs/design-handoff/otter/otter-sit-attentive.png` as the input image.
+2. Paste the prompt from one step. Set width and height to that step's dimensions.
+3. Review. If the otter shape changed, the model must use the input as-is.
+4. Repeat for each step.
 
-```
-Wide banner 1584x396. Left side: a small filled cartoon otter (warm brown
-fur #8A6A4A, cream belly, gold scarf #D4A24F) sitting calmly. To its right:
-"Otterly" in Fraunces SemiBold serif font, light text #F3F5F4, approximately
-40px. Below: "your calm task companion" in General Sans Regular, muted text
-#A8B3B0, approximately 16px. Background: dark teal #14201D. Bottom edge:
-a thin decorative wavy line in #2C3A36. Text and otter fit within the
-center 1300px. Minimal, professional, warm. No emojis, no drop shadows,
-no gradients.
-```
-
----
-
-## Step 7 — App Icon (1024x1024)
-
-Purpose: App Store / Play Store icon.
-
-```
-A soft filled-illustration cartoon otter sitting calmly on a warm cream
-background #F5F1E8. Warm brown fur #8A6A4A, cream belly and muzzle
-#E8D8BE, small dark dot eyes with white shine, subtle smile. Gold scarf
-#D4A24F around the neck. The otter fills about 70% of the frame. Flat
-filled illustration style, no thick outlines, no shading. Square 1024x1024.
-No text. No emojis. The otter should look warm, calm, and approachable
-at small sizes.
-```
-
----
-
-## Step 8 — Brand Scene (1024x1024, optional)
-
-Purpose: Website hero section, social post template, launch announcements.
-
-```
-Square brand scene 1024x1024. Warm cream background #F5F1E8 transitioning
-to soft teal #E7EFEA at the bottom. Center: a filled illustration cartoon
-otter sitting calmly (warm brown fur #8A6A4A, cream belly, gold scarf
-#D4A24F, dot eyes, subtle smile). Below the otter: "Otterly" in Fraunces
-SemiBold serif, dark text #18181B, approximately 48px. Below that:
-"your calm task companion" in General Sans Regular, muted #52525B,
-approximately 20px. Bottom edge: a thin decorative wavy line in teal
-#C7D9CF. Non-gamified, calm, warm companion feel.
-```
-
----
-
-## How to Use
-
-1. Feed DESIGN_SYSTEM.md to the generation tool as context.
-2. Open `frontend/assets/otter/otter-default.png` as the visual style reference.
-3. Paste Step 1 prompt. Review the output. Regenerate if the otter style does
-   not match (wrong shape, wrong colors, wrong scarf).
-4. Once Step 1 is approved, move to Step 2. Repeat.
-5. After all prompts are done, drop files into the folders listed in README.md.
+Drop outputs into `assets/social/profile/` or `assets/social/banner/` with the filenames from README.md.
