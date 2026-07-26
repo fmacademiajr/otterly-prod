@@ -42,11 +42,8 @@ Profile image: otterly-profile-light.png (1024x1024 master, platform
 crops to circle)
 
 Video spec: 9:16 vertical, 1080x1920. Max 3 tags on last line only.
-House style: short sentences, active voice, no em dashes, no
-semicolons, no hashtags in prose.
 
-Will need: otterly-profile-light.png, otterly-banner-x-light.png
-(will be cropped)
+Will need: otterly-profile-light.png
 
 ---
 
@@ -63,7 +60,6 @@ Bio (max 150 chars):
 Otterly: Start, Not Alone.
 Calm ADHD task starter. Type one task. Otterly shrinks it
 into a step small enough to start. No shame. PH-first. iOS 2026.
-↓
 ```
 
 Link in bio: https://getotterly.com
@@ -72,7 +68,6 @@ Profile image: same as TikTok (light profile)
 
 Post spec: square 1080x1080 or 4:5 portrait 1080x1350.
 Reels: 9:16 1080x1920.
-No hashtags in bio or captions. Max 3 in first comment if needed.
 
 Will need: otterly-profile-light.png
 
@@ -98,66 +93,11 @@ Will need: otterly-profile-light.png, otterly-banner-x-light.png
 
 ---
 
-## 4. Facebook
-
-Why: PH still has heavy FB usage.
-
-Page name: Otterly
-
-Handle: /otterlyapp
-
-Bio:
-```
-Otterly: Start, Not Alone. Calm ADHD task starter.
-Type one task you have been avoiding. Otterly shrinks it into a
-step small enough to start, then sits with you while you do it.
-No lists. No streaks. No shame. PH-first.
-```
-
-Profile image: otterly-profile-light.png
-Cover photo: facebook-cover-light.png (820x312 standard,
-851x315 recommended. Can use cropped LinkedIn banner or
-generate separate FB cover)
-
-Will need: otterly-profile-light.png, otterly-banner-facebook.png
-(851x315)
+## 4. Facebook — DONE
 
 ---
 
-## 5. LinkedIn (done)
-
-Page name: Otterly
-
-Handle: /company/otterly
-
-Description (company page):
-```
-Otterly is a calm ADHD task-starter for people who freeze
-on ordinary tasks.
-
-The core insight: task lists are the disease, not the cure.
-Every other productivity app hands you a longer list.
-Otterly's home screen shows one thing, never a list, never
-a badge.
-
-Features:
-- Task Shrinker that breaks one hard task into 3-10 tiny
-  physical steps
-- The Room, a text-based body-double that sits quietly
-  with you
-- Braindump that turns a paragraph into a short list
-- Energy-aware step sizing (low / medium / good)
-- Voice capture for spoken tasks
-- Soft streaks with seven quiet rings, no fire, no shame
-
-Philippines-first, iOS launch. Free forever. Deep Shrink is
-a one-time purchase or small monthly. Vouchers for anyone
-who cannot pay.
-
-Positioning: Start, Not Alone.
-```
-
-Already generated: otterly-profile-light.png, otterly-banner-linkedin-light.png (1584x396), otterly-cover-linkedin-company.png (4200x700)
+## 5. LinkedIn — DONE
 
 ---
 
@@ -206,7 +146,7 @@ Will need: otterly-profile-light.png
 
 ---
 
-## 8. GitHub (developer audience)
+## 8. GitHub
 
 Org name: Otterly
 
