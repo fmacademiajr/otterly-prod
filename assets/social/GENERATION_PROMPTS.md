@@ -43,7 +43,7 @@ For dark variant: background #14201D, text #F3F5F4, tagline #A8B3B0, wave line #
 
 ---
 
-## Step 3 — Light LinkedIn Banner
+## Step 3 — Light LinkedIn Banner (1584x396)
 
 Input: `otter-sit-attentive.png`
 Output: 1584x396 PNG
@@ -57,6 +57,31 @@ original proportions. Do not alter the otter. Background warm cream
 text and otter must fit within the center 1300px safe zone for
 mobile crop. No emojis. No drop shadows. No gradients.
 Output as 1584x396.
+```
+
+For dark variant: background #14201D, text #F3F5F4, tagline #A8B3B0, wave line #2C3A36.
+
+---
+
+## Step 3b — LinkedIn Company Cover (4200x700)
+
+Input: `otter-sit-attentive.png`
+Output: 4200x700 PNG. This is the full-width hero banner for a LinkedIn
+company page. The visible area on desktop is roughly the center 2600px.
+Keep all content within that safe zone.
+
+```
+Place the provided otter image at center-left of the safe zone, about
+200px tall, original proportions. Do not alter the otter. Background:
+warm cream #F5F1E8. To the right of the otter: "Otterly" in Fraunces
+SemiBold serif font, color #18181B, 72px. Below the wordmark: "Start,
+Not Alone." in General Sans Regular, color #52525B, 24px. At the
+bottom edge of the full banner: a thin decorative wavy line in teal
+#C7D9CF spanning the entire 4200px width. All content (otter and
+text) must sit within the center 2600px to avoid cropping on desktop.
+The left and right edges are decorative only. Plenty of negative
+space. No emojis. No drop shadows. No gradients. No repeating
+patterns. Output as 4200x700.
 ```
 
 For dark variant: background #14201D, text #F3F5F4, tagline #A8B3B0, wave line #2C3A36.
